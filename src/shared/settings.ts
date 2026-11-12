@@ -6,10 +6,7 @@ import type { ReactLike } from "../types/react";
 import { normalizeLocalPath } from "./extension-paths";
 
 export interface TerracottaSettings {
-  /**
-   * Loopback port used to reach Terracotta. Read straight from `data/settings.json`
-   * (no UI); defaults to 11451.
-   */
+  /** Preferred loopback port, tried first when connecting. Defaults to 11451. */
   port: number;
   /** Last port that actually answered, retried after the preferred port. */
   cachedPort: number;

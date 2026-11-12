@@ -83,7 +83,7 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
         React.createElement(
           Text,
           { fontSize: "xs", className: "secondary-text" },
-          `使用 settings.json 里指定的端口 ${session.settings.port}`
+          `默认端口 ${session.settings.port}，可在设置 → 扩展 → 陶瓦联机 里修改`
         )
       ),
       React.createElement(
