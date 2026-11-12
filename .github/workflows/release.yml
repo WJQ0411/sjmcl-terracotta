@@ -46,3 +46,4 @@ jobs:
         with:
           files: build/*.sjmclx
           generate_release_notes: true
+          overwrite_files: true
