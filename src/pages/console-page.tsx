@@ -13,15 +13,6 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
   return function ConsolePage() {
     const session = useTerracottaSession(api);
     const [joinCode, setJoinCode] = React.useState("");
-    const [portInput, setPortInput] = React.useState("");
-
-    React.useEffect(
-      function syncPortInput() {
-        const value = session.settings.port || session.port;
-        setPortInput(value ? String(value) : "");
-      },
-      [session.port, session.settings.port]
-    );
     const { room, status, actions } = session;
 
     const state = room?.state ?? "unknown";
@@ -74,29 +65,20 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
       React.createElement(
         Text,
         { fontSize: "sm", className: "secondary-text" },
-        "扩展不再扫描端口：它会直接使用你填写的端口，或读取陶瓦联机启动时写入的端口文件 / 锁文件。"
+        "扩展不扫描端口：先试设置里的端口（默认 11451），不通再读陶瓦联机 --hmcl 写下的端口文件与锁文件。"
       ),
       React.createElement(
         HStack,
         { spacing: 2, wrap: "wrap", align: "center" },
-        React.createElement(Input, {
-          size: "sm",
-          width: "120px",
-          placeholder: "端口",
-          value: portInput,
-          onChange: (event: { target: { value: string } }) =>
-            setPortInput(event.target.value.replace(/[^\d]/g, "")),
-        }),
         React.createElement(
           Button,
           {
             size: "sm",
             colorScheme: "blue",
             isLoading: status === "connecting",
-            onClick: () =>
-              void actions.connect(portInput ? Number(portInput) : undefined),
+            onClick: () => void actions.connect(),
           },
-          portInput ? "用此端口连接" : "读取端口并连接"
+          "连接陶瓦联机"
         ),
         React.createElement(
           Button,
@@ -104,9 +86,13 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
             size: "sm",
             colorScheme: "orange",
             onClick: () => void actions.launchApp(),
-            isDisabled: !session.settings.terracottaPath.trim(),
           },
-          "启动陶瓦联机"
+          "启动 core"
+        ),
+        React.createElement(
+          Text,
+          { fontSize: "xs", className: "secondary-text" },
+          `默认端口 ${session.settings.port}，可在设置 → 扩展 → 陶瓦联机 里修改`
         )
       ),
       React.createElement(
@@ -135,9 +121,14 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
         ? React.createElement(
             Text,
             { fontSize: "xs", className: "secondary-text" },
-            `${session.downloadStage} 下载内容会存到扩展数据目录 terracotta/ 下，完成后自动填入可执行文件路径。`
+            `${session.downloadStage} 下载会直接写入 core 路径（无需选择目录）。`
           )
         : null,
+      React.createElement(
+        Text,
+        { fontSize: "xs", className: "secondary-text" },
+        `core 路径：${session.corePath ?? session.coreRelativePath}`
+      ),
       session.portFileCommand
         ? React.createElement(
             VStack,

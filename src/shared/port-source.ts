@@ -92,3 +92,57 @@ export function hmclLaunchCommand(binaryPath: string, portFile: string): string 
   const bin = quote(binaryPath.trim() || "terracotta");
   return `${bin} --hmcl ${quote(portFile)}`;
 }
+
+export interface PortSourceDeps {
+  /** Reads `data/terracotta-port.json`; should throw when the file is absent. */
+  readPortFile: () => Promise<string>;
+  /** Raw host invoke bridge (used for the temp dir and the lock file). */
+  invoke: (command: string, payload?: Record<string, unknown>) => Promise<unknown>;
+}
+
+/**
+ * Builds the ordered, de-duplicated list of ports to try. Nothing is scanned:
+ * every entry comes from a known source.
+ */
+export async function collectPortCandidates(
+  deps: PortSourceDeps,
+  settings: { port: number; cachedPort: number }
+): Promise<ResolvedPort[]> {
+  const candidates: ResolvedPort[] = [];
+  const seen = new Set<number>();
+  const push = (port: number | null, source: PortSource) => {
+    if (!isValidPort(port) || seen.has(port)) return;
+    seen.add(port);
+    candidates.push({ port, source });
+  };
+
+  push(settings.port, "settings");
+
+  try {
+    push(parsePortFile(await deps.readPortFile()), "portFile");
+  } catch {
+    /* port file not written yet */
+  }
+
+  let tempDir: string | null = null;
+  try {
+    const resolved = await deps.invoke("plugin:path|resolve_directory", {
+      directory: "Temp",
+    });
+    tempDir = typeof resolved === "string" ? resolved : null;
+  } catch {
+    tempDir = null;
+  }
+
+  for (const path of lockFileCandidates(tempDir)) {
+    try {
+      push(decodeLockPort(toBytes(await deps.invoke("plugin:fs|read_file", { path }))), "lockFile");
+      if (candidates.some((item) => item.source === "lockFile")) break;
+    } catch {
+      /* lock file missing or not readable */
+    }
+  }
+
+  push(settings.cachedPort, "remembered");
+  return candidates;
+}

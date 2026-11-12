@@ -177,6 +177,39 @@ check(
     '"/opt/Terracotta App/terracotta" --hmcl "/a b/port.json"'
 );
 
+console.log("port candidate ordering");
+const fakeDeps = (portFileRaw, lockBytes) => ({
+  readPortFile: async () => {
+    if (portFileRaw === null) throw new Error("missing");
+    return portFileRaw;
+  },
+  invoke: async (command) => {
+    if (command === "plugin:path|resolve_directory") return "/tmp";
+    if (lockBytes) return lockBytes;
+    throw new Error("no lock file");
+  },
+});
+const ordered = await ports.collectPortCandidates(fakeDeps('{"port":45821}', new Uint8Array([0x2d, 0x03])), {
+  port: 11451,
+  cachedPort: 36000,
+});
+check(
+  "default port first, then file, then lock, then remembered",
+  ordered.map((item) => `${item.port}:${item.source}`).join("|") ===
+    "11451:settings|45821:portFile|11523:lockFile|36000:remembered",
+  ordered.map((item) => `${item.port}:${item.source}`).join("|")
+);
+const noFile = await ports.collectPortCandidates(fakeDeps(null, null), {
+  port: 11451,
+  cachedPort: 0,
+});
+check("only preferred port when nothing else exists", noFile.length === 1 && noFile[0].port === 11451);
+const dedup = await ports.collectPortCandidates(fakeDeps('{"port":11451}', null), {
+  port: 11451,
+  cachedPort: 11451,
+});
+check("duplicates removed", dedup.length === 1 && dedup[0].source === "settings");
+
 console.log("room lifecycle");
 await client.startHost(port, { player: "Steve" }, doFetch);
 const hosted = await client.fetchState(port, doFetch);

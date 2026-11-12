@@ -122,7 +122,8 @@ check("handles 32-bit chunks", encoded.length > 90000);
 console.log("paths");
 check("linux binary name", dl.localBinaryName("linux") === "terracotta");
 check("windows binary name", dl.localBinaryName("windows") === "terracotta.exe");
-check("relative path", dl.binaryRelativePath("linux") === "terracotta/terracotta");
+check("core path", dl.coreBinaryRelativePath("linux") === "core/terracotta");
+check("core dir constant", dl.CORE_DIR === "core");
 
 rmSync(outDir, { recursive: true, force: true });
 if (failures > 0) {

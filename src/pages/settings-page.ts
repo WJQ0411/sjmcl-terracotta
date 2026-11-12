@@ -14,7 +14,6 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
   return function SettingsPage() {
     const { settings, hasLoaded, writeSettings } = useTerracottaSettings(api);
     const [portText, setPortText] = React.useState("");
-    const [pathText, setPathText] = React.useState("");
     const [nameText, setNameText] = React.useState("");
     const [nodesText, setNodesText] = React.useState("");
     const [savedAt, setSavedAt] = React.useState<string | null>(null);
@@ -23,7 +22,6 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
       function syncFromSettings() {
         if (!hasLoaded) return;
         setPortText(settings.port ? String(settings.port) : "");
-        setPathText(settings.terracottaPath);
         setNameText(settings.playerName);
         setNodesText(settings.publicNodes);
       },
@@ -45,37 +43,52 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
           key: "port",
           title: "陶瓦联机接口端口",
           description:
-            "扩展不再扫描端口。填了就直接连这个端口；留空则读取陶瓦联机 --hmcl 启动时写的端口文件，再读不到就读它的锁文件。",
+            "默认 11451，连接时优先尝试；不通再读陶瓦联机 --hmcl 启动时写的端口文件与锁文件，全程不扫描端口。",
           isChildrenIndependent: true,
         },
         React.createElement(Input, {
           size: "sm",
           width: "120px",
-          placeholder: "留空则读取端口文件",
+          placeholder: "11451",
           value: portText,
           onChange: (event: { target: { value: string } }) =>
             setPortText(event.target.value.replace(/[^\d]/g, "")),
           onBlur: () =>
-            void save({ port: portText ? Number(portText) : 0 }),
+            void save({ port: portText ? Number(portText) : 11451 }),
         })
       ),
       React.createElement(
         OptionItem,
         {
-          key: "path",
-          title: "陶瓦联机可执行文件",
+          key: "core",
+          title: "core 路径（固定）",
           description:
-            "填写陶瓦联机程序（Windows 的 .exe 或 Linux 的 AppImage / 可执行文件）的绝对路径，控制台就能一键启动它。",
+            "下载与启动都用这个路径，不再单独选择目录。下载会直接覆盖这里的可执行文件。",
           isChildrenIndependent: true,
         },
-        React.createElement(Input, {
-          size: "sm",
-          width: "320px",
-          placeholder: "/home/you/Terracotta.AppImage",
-          value: pathText,
-          onChange: (event: { target: { value: string } }) => setPathText(event.target.value),
-          onBlur: () => void save({ terracottaPath: pathText.trim() }),
-        })
+        React.createElement(
+          HStack,
+          { spacing: 2, align: "center" },
+          React.createElement(
+            Text,
+            { fontSize: "xs", className: "secondary-text", wordBreak: "break-all" },
+            settings.downloadedVersion
+              ? `data/core（已下载 ${settings.downloadedVersion}）`
+              : "data/core"
+          ),
+          React.createElement(
+            Button,
+            {
+              size: "xs",
+              variant: "ghost",
+              onClick: () =>
+                void host.actions.openExternalLink(
+                  "https://github.com/burningtnt/Terracotta/releases/latest"
+                ),
+            },
+            "发布页"
+          )
+        )
       ),
       React.createElement(
         OptionItem,
@@ -179,12 +192,12 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
       React.createElement(
         Text,
         { fontSize: "xs", className: "secondary-text" },
-        "控制台的“下载最新版到配置目录”会读取 GitHub 上的 latest release，把对应平台的压缩包解压后写入扩展数据目录 terracotta/，并自动填入上面的可执行文件路径。"
+        "控制台的“下载最新版”会读取 GitHub 上的 latest release，把对应平台的压缩包解压后直接写入 core 路径 data/core/，启动按钮也用它。"
       ),
       React.createElement(
         Text,
         { fontSize: "xs", className: "secondary-text" },
-        `配套版本 v${"0.3.0"} · 联机能力由 Terracotta 提供（AGPL-3.0-or-later），本扩展同样以 AGPL-3.0-or-later 发布。`
+        `配套版本 v${"0.4.0"} · 联机能力由 Terracotta 提供（AGPL-3.0-or-later），本扩展同样以 AGPL-3.0-or-later 发布。`
       )
     );
   };

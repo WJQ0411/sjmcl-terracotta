@@ -5,12 +5,10 @@ import type { ExtensionFactoryApi } from "../types/host";
 import type { ReactLike } from "../types/react";
 
 export interface TerracottaSettings {
-  /** Manual loopback port; 0 means "read it from the port file / lock file". */
+  /** Preferred loopback port, tried first when connecting. Defaults to 11451. */
   port: number;
-  /** Last successfully discovered port, reused for the next fast path probe. */
+  /** Last port that actually answered, retried after the preferred port. */
   cachedPort: number;
-  /** Absolute path to the Terracotta executable / AppImage. */
-  terracottaPath: string;
   /** "launcher" follows the SJMCL selected account, "custom" uses playerName. */
   playerMode: "launcher" | "custom";
   playerName: string;
@@ -24,10 +22,12 @@ const SETTINGS_FILE = "settings.json";
 const SETTINGS_STATE_KEY = "terracottaSettings";
 const SETTINGS_READY_STATE_KEY = "terracottaSettingsReady";
 
+/** Default API port: tried first, before the port file / lock file. */
+export const DEFAULT_PORT = 11451;
+
 export const DEFAULT_SETTINGS: TerracottaSettings = {
-  port: 0,
+  port: DEFAULT_PORT,
   cachedPort: 0,
-  terracottaPath: "",
   playerMode: "launcher",
   playerName: "",
   publicNodes: "",
@@ -51,10 +51,9 @@ export function normalizeSettings(parsed: unknown): TerracottaSettings {
   const mode = value.playerMode === "custom" ? "custom" : "launcher";
 
   return {
-    port: toPort(value.port),
+    // Older versions stored 0 for "auto"; treat that as the new default port.
+    port: toPort(value.port) || DEFAULT_PORT,
     cachedPort: toPort(value.cachedPort),
-    terracottaPath:
-      typeof value.terracottaPath === "string" ? value.terracottaPath : "",
     playerMode: mode,
     playerName: typeof value.playerName === "string" ? value.playerName : "",
     publicNodes: typeof value.publicNodes === "string" ? value.publicNodes : "",

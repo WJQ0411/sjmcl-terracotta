@@ -164,14 +164,20 @@ export function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** File name used inside the extension data directory. */
+/**
+ * Fixed directory (inside the extension `data/`) that holds the Terracotta core
+ * executable. There is no user-selectable download path.
+ */
+export const CORE_DIR = "core";
+
+/** File name used inside the core directory. */
 export function localBinaryName(os: TargetOs): string {
   return os === "windows" ? "terracotta.exe" : "terracotta";
 }
 
-/** Relative path (inside `data/`) where the downloaded binary is stored. */
-export function binaryRelativePath(os: TargetOs): string {
-  return `terracotta/${localBinaryName(os)}`;
+/** Relative path (inside `data/`) of the Terracotta core executable. */
+export function coreBinaryRelativePath(os: TargetOs): string {
+  return `${CORE_DIR}/${localBinaryName(os)}`;
 }
 
 export function formatBytes(bytes: number): string {
