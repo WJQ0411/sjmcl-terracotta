@@ -65,7 +65,7 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
       React.createElement(
         Text,
         { fontSize: "sm", className: "secondary-text" },
-        "扩展不扫描端口：先试设置里的端口（默认 11451），不通再读陶瓦联机 --hmcl 写下的端口文件与锁文件。"
+        "扩展不扫描端口、也没有端口设置项：端口只来自启动命令写下的 terracotta-port.json。"
       ),
       React.createElement(
         HStack,
@@ -83,7 +83,9 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
         React.createElement(
           Text,
           { fontSize: "xs", className: "secondary-text" },
-          `默认端口 ${session.settings.port}，可在设置 → 扩展 → 陶瓦联机 里修改`
+          session.port
+            ? `当前端口 ${session.port}（来自端口文件）`
+            : "端口没有设置项：由启动命令写入端口文件后直接读取"
         )
       ),
       React.createElement(

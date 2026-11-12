@@ -145,36 +145,24 @@ check("detects terracotta", meta?.version === "0.3.1", JSON.stringify(meta));
 const wrongMeta = await client.fetchMeta(port + 1, doFetch, 300);
 check("closed port returns null", wrongMeta === null);
 
-console.log("port sources");
-check("settings port wins", ports.isValidPort(24000));
+console.log("port file");
+check("valid port", ports.isValidPort(24000));
 check("port 0 rejected", !ports.isValidPort(0));
 check("port 70000 rejected", !ports.isValidPort(70000));
-check(
-  "lock file decodes big endian port",
-  ports.decodeLockPort(new Uint8Array([0xb1, 0x25])) === 45349,
-  String(ports.decodeLockPort(new Uint8Array([0xb1, 0x25])))
-);
-check("short lock payload ignored", ports.decodeLockPort(new Uint8Array([1])) === null);
-check(
-  "array payload normalized",
-  ports.decodeLockPort(ports.toBytes([0x5d, 0xc0])) === 24000
-);
-check(
-  "array-like payload normalized",
-  ports.decodeLockPort(ports.toBytes({ 0: 0x5d, 1: 0xc0 })) === 24000
-);
 check("port file parsed", ports.parsePortFile('{"port":45821}') === 45821);
 check("broken port file ignored", ports.parsePortFile("nope") === null);
+check("missing port key rejected", ports.parsePortFile("{}") === null);
 check(
-  "lock candidates include temp dir",
-  ports.lockFileCandidates("/var/folders/xx").includes(
-    "/var/folders/xx/terracotta/terracotta.lock"
-  )
+  "readPortFromFile returns port",
+  (await ports.readPortFromFile({ readPortFile: async () => '{"port":11451}' })) === 11451
 );
 check(
-  "hmcl command quotes spaces",
-  ports.hmclLaunchCommand("/opt/Terracotta App/terracotta", "/a b/port.json") ===
-    '"/opt/Terracotta App/terracotta" --hmcl "/a b/port.json"'
+  "readPortFromFile tolerates missing file",
+  (await ports.readPortFromFile({
+    readPortFile: async () => {
+      throw new Error("ENOENT");
+    },
+  })) === null
 );
 
 console.log("background launch command");
@@ -201,39 +189,6 @@ check(
     "Start-Process -FilePath 'C:\\tc\\terracotta.exe' -ArgumentList '--hmcl','C:\\tc\\port.json'",
   ports.backgroundLaunchCommand("C:\\tc\\terracotta.exe", "C:\\tc\\port.json", "windows")
 );
-
-console.log("port candidate ordering");
-const fakeDeps = (portFileRaw, lockBytes) => ({
-  readPortFile: async () => {
-    if (portFileRaw === null) throw new Error("missing");
-    return portFileRaw;
-  },
-  invoke: async (command) => {
-    if (command === "plugin:path|resolve_directory") return "/tmp";
-    if (lockBytes) return lockBytes;
-    throw new Error("no lock file");
-  },
-});
-const ordered = await ports.collectPortCandidates(fakeDeps('{"port":45821}', new Uint8Array([0x2d, 0x03])), {
-  port: 11451,
-  cachedPort: 36000,
-});
-check(
-  "default port first, then file, then lock, then remembered",
-  ordered.map((item) => `${item.port}:${item.source}`).join("|") ===
-    "11451:settings|45821:portFile|11523:lockFile|36000:remembered",
-  ordered.map((item) => `${item.port}:${item.source}`).join("|")
-);
-const noFile = await ports.collectPortCandidates(fakeDeps(null, null), {
-  port: 11451,
-  cachedPort: 0,
-});
-check("only preferred port when nothing else exists", noFile.length === 1 && noFile[0].port === 11451);
-const dedup = await ports.collectPortCandidates(fakeDeps('{"port":11451}', null), {
-  port: 11451,
-  cachedPort: 11451,
-});
-check("duplicates removed", dedup.length === 1 && dedup[0].source === "settings");
 
 console.log("room lifecycle");
 await client.startHost(port, { player: "Steve" }, doFetch);

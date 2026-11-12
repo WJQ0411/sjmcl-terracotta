@@ -6,10 +6,6 @@ import type { ReactLike } from "../types/react";
 import { normalizeLocalPath } from "./extension-paths";
 
 export interface TerracottaSettings {
-  /** Preferred loopback port, tried first when connecting. Defaults to 11451. */
-  port: number;
-  /** Last port that actually answered, retried after the preferred port. */
-  cachedPort: number;
   /** "launcher" follows the SJMCL selected account, "custom" uses playerName. */
   playerMode: "launcher" | "custom";
   playerName: string;
@@ -25,12 +21,7 @@ const SETTINGS_FILE = "settings.json";
 const SETTINGS_STATE_KEY = "terracottaSettings";
 const SETTINGS_READY_STATE_KEY = "terracottaSettingsReady";
 
-/** Default API port: tried first, before the port file / lock file. */
-export const DEFAULT_PORT = 11451;
-
 export const DEFAULT_SETTINGS: TerracottaSettings = {
-  port: DEFAULT_PORT,
-  cachedPort: 0,
   playerMode: "launcher",
   playerName: "",
   publicNodes: "",
@@ -39,13 +30,6 @@ export const DEFAULT_SETTINGS: TerracottaSettings = {
 };
 
 let initPromise: Promise<TerracottaSettings> | null = null;
-
-function toPort(value: unknown): number {
-  const port = typeof value === "string" ? Number.parseInt(value, 10) : value;
-  if (typeof port !== "number" || !Number.isFinite(port)) return 0;
-  if (port < 1 || port > 65535) return 0;
-  return Math.trunc(port);
-}
 
 function isAbsoluteLocalPath(value: string): boolean {
   return value.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(value) || value.startsWith("\\\\");
@@ -65,9 +49,6 @@ export function normalizeSettings(parsed: unknown): TerracottaSettings {
   const mode = value.playerMode === "custom" ? "custom" : "launcher";
 
   return {
-    // Older versions stored 0 for "auto"; treat that as the new default port.
-    port: toPort(value.port) || DEFAULT_PORT,
-    cachedPort: toPort(value.cachedPort),
     playerMode: mode,
     playerName: typeof value.playerName === "string" ? value.playerName : "",
     publicNodes: typeof value.publicNodes === "string" ? value.publicNodes : "",

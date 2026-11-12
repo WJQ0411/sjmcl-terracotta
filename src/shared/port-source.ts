@@ -2,26 +2,17 @@
 // Copyright (C) 2026 WJQ0411
 
 /**
- * Loopback port sources for the Terracotta HTTP API.
+ * Loopback port for the Terracotta HTTP API.
  *
- * Terracotta binds a random loopback port (`port: 0` in Rocket). Instead of
- * scanning the whole port space, the launcher side reads the port directly from
- * one of the official sources:
+ * Terracotta binds a random loopback port (`port: 0` in Rocket) and offers no
+ * `--port` switch; the supported way to publish the port is
+ * `terracotta --hmcl <file>`, which writes `{"port": 12345}` into that file.
  *
- * 1. the user-specified port (settings);
- * 2. the port file written by `terracotta --hmcl <file>` (this is exactly how
- *    HMCL integrates, and lets the launcher pick the file at startup);
- * 3. Terracotta's single-instance lock file (`<temp>/terracotta/terracotta.lock`,
- *    two bytes, big endian);
- * 4. the last port that worked (remembered between launches).
+ * The extension therefore has exactly one source of truth: the port file inside
+ * its own data directory (`data/terracotta-port.json`). Launch Terracotta with
+ * the command the console prints, then the port is simply read back — no port
+ * setting, no scanning.
  */
-
-export type PortSource = "settings" | "portFile" | "lockFile" | "remembered";
-
-export interface ResolvedPort {
-  port: number;
-  source: PortSource;
-}
 
 export const PORT_FILE_NAME = "terracotta-port.json";
 
@@ -34,32 +25,6 @@ export function isValidPort(value: unknown): value is number {
   );
 }
 
-/** Decodes the two big-endian bytes Terracotta stores in `terracotta.lock`. */
-export function decodeLockPort(bytes: Uint8Array | number[] | null): number | null {
-  if (!bytes || bytes.length < 2) return null;
-  const high = bytes[0] ?? 0;
-  const low = bytes[1] ?? 0;
-  const port = (high << 8) | low;
-  return isValidPort(port) ? port : null;
-}
-
-/** Normalizes the payload returned by `plugin:fs|read_file` into bytes. */
-export function toBytes(payload: unknown): Uint8Array | null {
-  if (!payload) return null;
-  if (payload instanceof Uint8Array) return payload;
-  if (payload instanceof ArrayBuffer) return new Uint8Array(payload);
-  if (Array.isArray(payload)) return Uint8Array.from(payload as number[]);
-  if (typeof payload === "object") {
-    const record = payload as Record<string, number>;
-    const keys = Object.keys(record).filter((key) => /^\d+$/.test(key));
-    if (keys.length > 0) {
-      keys.sort((a, b) => Number(a) - Number(b));
-      return Uint8Array.from(keys.map((key) => record[key] ?? 0));
-    }
-  }
-  return null;
-}
-
 /** Parses `{"port": 12345}` written by `terracotta --hmcl <file>`. */
 export function parsePortFile(raw: string): number | null {
   try {
@@ -70,19 +35,24 @@ export function parsePortFile(raw: string): number | null {
   }
 }
 
+export interface PortFileDeps {
+  /** Reads `data/terracotta-port.json`; should throw when the file is absent. */
+  readPortFile: () => Promise<string>;
+}
+
 /**
- * Candidate lock file locations. Terracotta stores it in the system temp dir on
- * every platform except macOS, where it uses `~/terracotta`.
+ * Reads the port Terracotta published for this launch. Returns null when the
+ * file is missing or malformed (i.e. Terracotta has not been started with
+ * `--hmcl` yet).
  */
-export function lockFileCandidates(tempDir?: string | null): string[] {
-  const candidates = new Set<string>();
-  for (const dir of [tempDir, "/tmp"]) {
-    if (!dir) continue;
-    const base = dir.replace(/[\\/]+$/, "");
-    candidates.add(`${base}/terracotta/terracotta.lock`);
+export async function readPortFromFile(
+  deps: PortFileDeps
+): Promise<number | null> {
+  try {
+    return parsePortFile(await deps.readPortFile());
+  } catch {
+    return null;
   }
-  candidates.add("/tmp/terracotta/terracotta.lock");
-  return [...candidates];
 }
 
 /** Builds the copy-paste command that pins the port file at startup. */
@@ -117,58 +87,4 @@ export function backgroundLaunchCommand(
   const quote = (value: string) =>
     /[\s"'$`\\]/.test(value) ? `"${value.replace(/(["$`\\])/g, "\\$1")}"` : value;
   return `nohup ${quote(bin)} --hmcl ${quote(port)} >/dev/null 2>&1 &`;
-}
-
-export interface PortSourceDeps {
-  /** Reads `data/terracotta-port.json`; should throw when the file is absent. */
-  readPortFile: () => Promise<string>;
-  /** Raw host invoke bridge (used for the temp dir and the lock file). */
-  invoke: (command: string, payload?: Record<string, unknown>) => Promise<unknown>;
-}
-
-/**
- * Builds the ordered, de-duplicated list of ports to try. Nothing is scanned:
- * every entry comes from a known source.
- */
-export async function collectPortCandidates(
-  deps: PortSourceDeps,
-  settings: { port: number; cachedPort: number }
-): Promise<ResolvedPort[]> {
-  const candidates: ResolvedPort[] = [];
-  const seen = new Set<number>();
-  const push = (port: number | null, source: PortSource) => {
-    if (!isValidPort(port) || seen.has(port)) return;
-    seen.add(port);
-    candidates.push({ port, source });
-  };
-
-  push(settings.port, "settings");
-
-  try {
-    push(parsePortFile(await deps.readPortFile()), "portFile");
-  } catch {
-    /* port file not written yet */
-  }
-
-  let tempDir: string | null = null;
-  try {
-    const resolved = await deps.invoke("plugin:path|resolve_directory", {
-      directory: "Temp",
-    });
-    tempDir = typeof resolved === "string" ? resolved : null;
-  } catch {
-    tempDir = null;
-  }
-
-  for (const path of lockFileCandidates(tempDir)) {
-    try {
-      push(decodeLockPort(toBytes(await deps.invoke("plugin:fs|read_file", { path }))), "lockFile");
-      if (candidates.some((item) => item.source === "lockFile")) break;
-    } catch {
-      /* lock file missing or not readable */
-    }
-  }
-
-  push(settings.cachedPort, "remembered");
-  return candidates;
 }

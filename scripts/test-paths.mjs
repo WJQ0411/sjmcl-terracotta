@@ -198,13 +198,9 @@ check("returns null when nothing works", nothing === null);
 
 console.log("settings normalization");
 check(
-  "default port is 11451",
-  settingsModule.normalizeSettings({}).port === 11451,
-  String(settingsModule.normalizeSettings({}).port)
-);
-check(
-  "legacy 0 port migrates to 11451",
-  settingsModule.normalizeSettings({ port: 0 }).port === 11451
+  "settings no longer carry a port",
+  !("port" in settingsModule.normalizeSettings({ port: 1234 })),
+  JSON.stringify(settingsModule.normalizeSettings({ port: 1234 }))
 );
 check(
   "smb:// corePath stripped to plain path",
