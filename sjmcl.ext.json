@@ -1,0 +1,11 @@
+{
+  "identifier": "io.github.wjq0411.sjmcl-terracotta",
+  "name": "陶瓦联机",
+  "description": "在 SJMCL 中直接创建/加入 Terracotta（陶瓦联机）房间，无需手动配置端口映射。",
+  "author": "WJQ0411",
+  "version": "0.1.0",
+  "minimalLauncherVersion": "1.0.0",
+  "frontend": {
+    "entry": "frontend/index.js"
+  }
+}
