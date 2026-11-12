@@ -3,6 +3,7 @@
 
 import type { ExtensionFactoryApi } from "../types/host";
 import type { ReactLike } from "../types/react";
+import { normalizeLocalPath } from "./extension-paths";
 
 export interface TerracottaSettings {
   /** Preferred loopback port, tried first when connecting. Defaults to 11451. */
@@ -46,6 +47,16 @@ function toPort(value: unknown): number {
   return Math.trunc(port);
 }
 
+function isAbsoluteLocalPath(value: string): boolean {
+  return value.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(value) || value.startsWith("\\\\");
+}
+
+function toAbsolutePath(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const normalized = normalizeLocalPath(value);
+  return normalized && isAbsoluteLocalPath(normalized) ? normalized : "";
+}
+
 export function normalizeSettings(parsed: unknown): TerracottaSettings {
   const value =
     parsed && typeof parsed === "object"
@@ -62,7 +73,8 @@ export function normalizeSettings(parsed: unknown): TerracottaSettings {
     publicNodes: typeof value.publicNodes === "string" ? value.publicNodes : "",
     downloadedVersion:
       typeof value.downloadedVersion === "string" ? value.downloadedVersion : "",
-    corePath: typeof value.corePath === "string" ? value.corePath : "",
+    // Drop stale/broken values (e.g. a URL with an smb:// prefix) on load.
+    corePath: toAbsolutePath(value.corePath),
   };
 }
 

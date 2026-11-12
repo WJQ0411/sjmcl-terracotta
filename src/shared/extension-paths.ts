@@ -15,27 +15,74 @@
  */
 import type { ExtensionFactoryApi } from "../types/host";
 
-/** Extracts the (still percent-encoded) absolute file path from an asset URL. */
-export function assetUrlToPath(url: string): string | null {
-  if (!url) return null;
-  const trimmed = url.trim();
+const LOCAL_AUTHORITIES = new Set(["localhost", "127.0.0.1", "::1", "asset.localhost"]);
 
-  const match = trimmed.match(
-    /^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\/(?:[^/]*)\/(.*)$/
-  );
-  if (!match) return null;
+/**
+ * Normalizes anything that looks like a URL into a plain local filesystem path.
+ *
+ * Some hosts hand back asset URLs with an unexpected scheme (e.g. `smb://`), and
+ * `open_path` / `write_file` only accept plain paths — passing `smb://...` ends
+ * up as "no such file". This strips scheme + authority, decodes percent escapes
+ * and fixes Windows drive prefixes.
+ */
+export function normalizeLocalPath(value: string): string | null {
+  if (typeof value !== "string") return null;
+  let path = value.trim();
+  if (!path) return null;
 
-  const encodedPath = `/${match[1]}`;
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(encodedPath);
-  } catch {
-    decoded = encodedPath;
+  // Strip any number of scheme://authority prefixes.
+  for (let guard = 0; guard < 3; guard += 1) {
+    const match = path.match(/^([a-zA-Z][a-zA-Z0-9+.\-]*):\/\/([\s\S]*)$/);
+    if (!match) break;
+    const rest = match[2];
+    if (rest.startsWith("/") || rest.startsWith("\\")) {
+      // smb:///home/x, file:///home/x
+      path = rest;
+      continue;
+    }
+    const slash = rest.search(/[\\/]/);
+    const authority = slash === -1 ? rest : rest.slice(0, slash);
+    const remainder = slash === -1 ? "" : rest.slice(slash);
+    if (slash !== -1 && !LOCAL_AUTHORITIES.has(authority.toLowerCase())) {
+      // Remote host in the URL: best effort, keep the path part.
+      path = remainder;
+    } else if (slash !== -1) {
+      path = remainder;
+    } else {
+      path = `/${authority}`;
+    }
   }
 
-  // Windows asset URLs look like /C:/Users/... — drop the leading slash.
-  if (/^\/[a-zA-Z]:[\\/]/.test(decoded)) decoded = decoded.slice(1);
-  return decoded || null;
+  if (path.includes("%")) {
+    try {
+      path = decodeURIComponent(path);
+    } catch {
+      /* keep the raw text */
+    }
+  }
+
+  // Windows: "/C:/Users/x" -> "C:/Users/x"
+  if (/^\/[a-zA-Z]:[\\/]/.test(path)) path = path.slice(1);
+
+  if (!path || path.includes("://")) return null;
+  return path;
+}
+
+/** Extracts the (still percent-encoded) absolute file path from an asset URL. */
+export function assetUrlToPath(url: string): string | null {
+  if (!url || !/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\//.test(url.trim())) return null;
+  const path = normalizeLocalPath(url);
+  return path && isAbsoluteLocalPath(path) ? path : null;
+}
+
+/** True for `/abs/path`, `C:\path` and `\\server\share`. */
+export function isAbsoluteLocalPath(value: string): boolean {
+  return (
+    typeof value === "string" &&
+    (value.startsWith("/") ||
+      /^[a-zA-Z]:[\\/]/.test(value) ||
+      value.startsWith("\\\\"))
+  );
 }
 
 /** Minimal dirname that understands both separators. */
@@ -51,7 +98,13 @@ export function joinPath(base: string, ...parts: string[]): string {
   const head = base.replace(/[\\/]+$/, "");
   const tail = parts
     .filter(Boolean)
-    .map((part) => part.split(/[\\/]+/).filter(Boolean).join(separator));
+    .map((part) =>
+      part
+        .split(/[\\/]+/)
+        .filter((segment) => Boolean(segment) && segment !== ".")
+        .join(separator)
+    )
+    .filter(Boolean);
   return [head, ...tail].join(separator);
 }
 
@@ -69,7 +122,10 @@ export async function resolveExtensionRoot(
   try {
     const assetUrl = api.resolveAssetUrl("sjmcl.ext.json");
     const assetPath = assetUrlToPath(assetUrl);
-    if (assetPath) return dirnameOf(assetPath);
+    if (assetPath) {
+      const rootDir = normalizeLocalPath(dirnameOf(assetPath));
+      if (rootDir && isAbsoluteLocalPath(rootDir)) return rootDir;
+    }
   } catch {
     /* fall through to the path plugin */
   }
@@ -88,9 +144,13 @@ export async function resolveExtensionRoot(
           const joined = await host.actions.invoke<string>("plugin:path|join", {
             paths: [root, ...parts],
           });
-          if (joined) return joined;
+          if (joined) {
+            const normalized = normalizeLocalPath(joined);
+            if (normalized && isAbsoluteLocalPath(normalized)) return normalized;
+          }
         } catch {
-          return joinPath(root, ...parts);
+          const normalized = normalizeLocalPath(joinPath(root, ...parts));
+          if (normalized && isAbsoluteLocalPath(normalized)) return normalized;
         }
       } catch {
         /* try the next spelling */
@@ -112,5 +172,5 @@ export async function resolveExtensionDataFile(
 ): Promise<string | null> {
   const root = await resolveExtensionRoot(api, host);
   if (!root) return null;
-  return joinPath(root, "data", ...relativePath.split(/[\\/]+/));
+  return normalizeLocalPath(joinPath(root, "data", ...relativePath.split(/[\\/]+/)));
 }

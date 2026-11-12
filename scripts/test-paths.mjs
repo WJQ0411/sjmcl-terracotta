@@ -24,7 +24,18 @@ await build({
   logLevel: "silent",
 });
 
+await build({
+  entryPoints: [path.join(root, "src/shared/settings.ts")],
+  outfile: path.join(outDir, "settings.mjs"),
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  target: ["node18"],
+  logLevel: "silent",
+});
+
 const paths = await import(path.join(outDir, "extension-paths.mjs"));
+const settingsModule = await import(path.join(outDir, "settings.mjs"));
 
 let failures = 0;
 const check = (name, ok, detail) => {
@@ -78,6 +89,42 @@ check(
 );
 check("join strips duplicate separators", paths.joinPath("/a/", "/data/", "x") === "/a/data/x");
 
+console.log("normalizeLocalPath (scheme stripping)");
+check(
+  "smb:// with localhost authority",
+  paths.normalizeLocalPath("smb://localhost/home/jack/x/terracotta") ===
+    "/home/jack/x/terracotta",
+  paths.normalizeLocalPath("smb://localhost/home/jack/x/terracotta")
+);
+check(
+  "smb:/// empty authority",
+  paths.normalizeLocalPath("smb:///home/jack/x") === "/home/jack/x",
+  paths.normalizeLocalPath("smb:///home/jack/x")
+);
+check(
+  "smb:// remote host keeps path part",
+  paths.normalizeLocalPath("smb://nas/share/core/terracotta") === "/share/core/terracotta",
+  paths.normalizeLocalPath("smb://nas/share/core/terracotta")
+);
+check(
+  "file:// windows path",
+  paths.normalizeLocalPath("file:///C:/Users/jack/AppData/core/terracotta.exe") ===
+    "C:/Users/jack/AppData/core/terracotta.exe",
+  paths.normalizeLocalPath("file:///C:/Users/jack/AppData/core/terracotta.exe")
+);
+check(
+  "plain path untouched",
+  paths.normalizeLocalPath("/home/jack/x") === "/home/jack/x"
+);
+check(
+  "percent escapes decoded once",
+  paths.normalizeLocalPath("smb://localhost/home/jack/My%20Games/core") ===
+    "/home/jack/My Games/core",
+  paths.normalizeLocalPath("smb://localhost/home/jack/My%20Games/core")
+);
+check("scheme-less relative kept", paths.normalizeLocalPath("data/core") === "data/core");
+check("empty rejected", paths.normalizeLocalPath("   ") === null);
+
 const host = { actions: { invoke: async () => { throw new Error("not allowed"); } } };
 const api = {
   identifier: "io.github.wjq0411.sjmcl-terracotta",
@@ -102,6 +149,20 @@ check(
     "C:\\Users\\jack\\AppData\\Roaming\\SJMCL\\UserContent\\Extensions\\x.y.z\\data\\core\\terracotta.exe",
   String(windowsData)
 );
+
+const smbApi = {
+  identifier: "io.github.wjq0411.sjmcl-terracotta",
+  resolveAssetUrl: (p) =>
+    `smb://localhost/home/jack/.local/share/SJMCL/UserContent/Extensions/io.github.wjq0411.sjmcl-terracotta/${p}`,
+};
+const smbData = await paths.resolveExtensionDataFile(smbApi, host, "core/terracotta");
+check(
+  "smb:// asset url yields plain path",
+  smbData ===
+    "/home/jack/.local/share/SJMCL/UserContent/Extensions/io.github.wjq0411.sjmcl-terracotta/data/core/terracotta",
+  String(smbData)
+);
+check("smb result has no scheme", !String(smbData).includes("://"));
 
 // When the asset URL is unusable, the path plugin is used as a fallback.
 const brokenApi = {
@@ -134,6 +195,31 @@ check(
 const nothingApi = { identifier: "x.y.z", resolveAssetUrl: () => "" };
 const nothing = await paths.resolveExtensionDataFile(nothingApi, host, "core/terracotta");
 check("returns null when nothing works", nothing === null);
+
+console.log("settings normalization");
+check(
+  "default port is 11451",
+  settingsModule.normalizeSettings({}).port === 11451,
+  String(settingsModule.normalizeSettings({}).port)
+);
+check(
+  "legacy 0 port migrates to 11451",
+  settingsModule.normalizeSettings({ port: 0 }).port === 11451
+);
+check(
+  "smb:// corePath stripped to plain path",
+  settingsModule.normalizeSettings({ corePath: "smb://localhost/home/jack/x" }).corePath ===
+    "/home/jack/x",
+  JSON.stringify(settingsModule.normalizeSettings({ corePath: "smb://localhost/home/jack/x" }).corePath)
+);
+check(
+  "absolute corePath kept",
+  settingsModule.normalizeSettings({ corePath: "/home/jack/x/core" }).corePath === "/home/jack/x/core"
+);
+check(
+  "relative corePath dropped",
+  settingsModule.normalizeSettings({ corePath: "data/core" }).corePath === ""
+);
 
 rmSync(outDir, { recursive: true, force: true });
 if (failures > 0) {
