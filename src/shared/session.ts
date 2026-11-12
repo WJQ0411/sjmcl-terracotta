@@ -4,7 +4,6 @@
 import type { ExtensionFactoryApi } from "../types/host";
 import type { ReactLike } from "../types/react";
 import {
-  discoverPort,
   fetchMeta,
   fetchState,
   joinRoom,
@@ -16,6 +15,17 @@ import {
   type TerracottaMeta,
   type TerracottaState,
 } from "./terracotta";
+import {
+  PORT_FILE_NAME,
+  decodeLockPort,
+  hmclLaunchCommand,
+  isValidPort,
+  lockFileCandidates,
+  parsePortFile,
+  toBytes,
+  type PortSource,
+  type ResolvedPort,
+} from "./port-source";
 import {
   LATEST_RELEASE_API,
   LATEST_RELEASE_PAGE,
@@ -69,25 +79,82 @@ async function resolveExtensionDataFile(
   }
 }
 
-export type SessionStatus = "unknown" | "discovering" | "online" | "offline";
+/**
+ * Reads the API port directly, without scanning: explicit setting first, then
+ * the `--hmcl` port file, then Terracotta's single-instance lock file, and
+ * finally the last port that worked.
+ */
+async function readConfiguredPort(
+  host: ReturnType<ExtensionFactoryApi["getHostContext"]>,
+  settings: TerracottaSettings
+): Promise<ResolvedPort | null> {
+  if (isValidPort(settings.port)) {
+    return { port: settings.port, source: "settings" };
+  }
+
+  try {
+    const port = parsePortFile(await host.actions.readFile(PORT_FILE_NAME));
+    if (port) return { port, source: "portFile" };
+  } catch {
+    /* port file not written yet */
+  }
+
+  let tempDir: string | null = null;
+  try {
+    tempDir = await host.actions.invoke<string>("plugin:path|resolve_directory", {
+      directory: "Temp",
+    });
+  } catch {
+    tempDir = null;
+  }
+
+  for (const candidate of lockFileCandidates(tempDir)) {
+    try {
+      const raw = await host.actions.invoke("plugin:fs|read_file", {
+        path: candidate,
+      });
+      const port = decodeLockPort(toBytes(raw));
+      if (port) return { port, source: "lockFile" };
+    } catch {
+      /* lock file missing or not readable */
+    }
+  }
+
+  if (isValidPort(settings.cachedPort)) {
+    return { port: settings.cachedPort, source: "remembered" };
+  }
+
+  return null;
+}
+
+const SOURCE_HINT: Record<PortSource, string> = {
+  settings: "设置项",
+  portFile: PORT_FILE_NAME,
+  lockFile: "陶瓦联机锁文件",
+  remembered: "上次使用",
+};
+
+export type SessionStatus = "unknown" | "connecting" | "online" | "offline";
 
 export interface TerracottaSession {
   settings: TerracottaSettings;
   settingsLoaded: boolean;
   port: number;
+  portSource: PortSource | null;
   status: SessionStatus;
   meta: TerracottaMeta | null;
   room: TerracottaState | null;
   error: string | null;
   notice: string | null;
   busy: boolean;
-  progress: { scanned: number; total: number } | null;
   downloadStage: string | null;
   chmodHint: string | null;
   playerName?: string;
   stateText: string;
+  /** Copy-paste command that pins the port file for the next launch. */
+  portFileCommand: string | null;
   actions: {
-    discover: (silent?: boolean) => Promise<void>;
+    connect: (portOverride?: number) => Promise<void>;
     startHosting: () => Promise<void>;
     join: (code: string) => Promise<void>;
     leave: () => Promise<void>;
@@ -112,17 +179,16 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
     ONLINE_STATE_KEY,
     false
   );
+  const [portSource, setPortSource] = React.useState<PortSource | null>(null);
   const [meta, setMeta] = React.useState<TerracottaMeta | null>(null);
   const [room, setRoom] = React.useState<TerracottaState | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
-  const [discovering, setDiscovering] = React.useState(false);
-  const [progress, setProgress] = React.useState<
-    { scanned: number; total: number } | null
-  >(null);
+  const [connecting, setConnecting] = React.useState(false);
   const [downloadStage, setDownloadStage] = React.useState<string | null>(null);
   const [chmodHint, setChmodHint] = React.useState<string | null>(null);
+  const [portFileCommand, setPortFileCommand] = React.useState<string | null>(null);
 
   const selectedPlayerName = (hostData.selectedPlayer as { name?: string } | undefined)
     ?.name;
@@ -140,7 +206,6 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
       const snapshot = await fetchState(port, doFetch);
       setRoom(snapshot);
       setOnline(true);
-      setError(null);
     } catch (err) {
       setOnline(false);
       setRoom(null);
@@ -165,58 +230,88 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
     [online, port, refresh]
   );
 
-  const discover = React.useCallback(
-    async function discover(silent = false) {
-      setDiscovering(true);
+  const connect = React.useCallback(
+    async function connect(portOverride?: number) {
+      setConnecting(true);
       setError(null);
-      if (!silent) setNotice("正在查找陶瓦联机的本地接口…");
-      setProgress({ scanned: 0, total: 1 });
+      setNotice(null);
       try {
-        const found = await discoverPort({
-          doFetch,
-          platform: navigator.userAgent,
-          preferredPorts: [settings.port, settings.cachedPort],
-          onProgress: (scanned, total) => setProgress({ scanned, total }),
-        });
-        if (!found) {
+        const resolved: ResolvedPort | null = isValidPort(portOverride)
+          ? { port: portOverride, source: "settings" }
+          : await readConfiguredPort(host, settings);
+
+        if (!resolved) {
           setOnline(false);
           setPort(0);
           setError(
-            "没有找到正在运行的陶瓦联机。请先启动陶瓦联机（或在上方设置里填写可执行文件路径后点“启动陶瓦联机”）。"
+            "还没拿到陶瓦联机的接口端口。请在设置里填写端口，或用下面的 --hmcl 方式启动陶瓦联机，让扩展直接读取端口文件。"
           );
           return;
         }
-        const foundMeta = await fetchMeta(found, doFetch);
-        setPort(found);
-        setMeta(foundMeta);
+
+        const found = await fetchMeta(resolved.port, doFetch);
+        if (!found) {
+          setOnline(false);
+          setPort(resolved.port);
+          setPortSource(resolved.source);
+          setError(
+            `端口 ${resolved.port}（来源：${SOURCE_HINT[resolved.source]}）没有响应。请确认陶瓦联机已启动，或更新端口设置。`
+          );
+          return;
+        }
+
+        setPort(resolved.port);
+        setPortSource(resolved.source);
+        setMeta(found);
         setOnline(true);
         setError(null);
-        if (found !== settings.cachedPort) {
-          void writeSettings({ cachedPort: found });
+        setNotice(
+          `已连接陶瓦联机 v${found.version ?? "?"}（端口 ${resolved.port}，来源：${SOURCE_HINT[resolved.source]}）`
+        );
+        if (resolved.port !== settings.port) {
+          void writeSettings({ cachedPort: resolved.port });
         }
-        setNotice(`已连接陶瓦联机 v${foundMeta?.version ?? "?"}（端口 ${found}）`);
-        const snapshot = await fetchState(found, doFetch);
+        const snapshot = await fetchState(resolved.port, doFetch);
         setRoom(snapshot);
       } catch (err) {
+        setOnline(false);
         setError(err instanceof Error ? err.message : String(err));
       } finally {
-        setDiscovering(false);
-        setProgress(null);
+        setConnecting(false);
       }
     },
-    [doFetch, setOnline, setPort, settings.cachedPort, settings.port, writeSettings]
+    [doFetch, host, setOnline, setPort, settings, writeSettings]
   );
 
-  const autoDiscoverRef = React.useRef(false);
+  const autoConnectRef = React.useRef(false);
   React.useEffect(
-    function autoDiscoverOnce() {
-      if (!hasLoaded || autoDiscoverRef.current) return;
-      if (!settings.autoDiscover && !settings.port && !settings.cachedPort) return;
-      autoDiscoverRef.current = true;
+    function autoConnectOnce() {
+      if (!hasLoaded || autoConnectRef.current) return;
+      autoConnectRef.current = true;
+      if (!settings.port && !settings.cachedPort) return;
       if (port && online) return;
-      void discover(true);
+      void connect();
     },
-    [discover, hasLoaded, online, port, settings.autoDiscover, settings.cachedPort, settings.port]
+    [connect, hasLoaded, online, port, settings.cachedPort, settings.port]
+  );
+
+  React.useEffect(
+    function buildPortFileCommand() {
+      let cancelled = false;
+      void resolveExtensionDataFile(api, host, PORT_FILE_NAME).then((absolute) => {
+        if (cancelled) return;
+        setPortFileCommand(
+          hmclLaunchCommand(
+            settings.terracottaPath || "terracotta",
+            absolute ?? `<扩展数据目录>/${PORT_FILE_NAME}`
+          )
+        );
+      });
+      return function cleanup() {
+        cancelled = true;
+      };
+    },
+    [api, host, settings.terracottaPath]
   );
 
   const startHosting = React.useCallback(async () => {
@@ -228,10 +323,11 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
     setError(null);
     setNotice(null);
     try {
-      await startHost(port, {
-        player: playerName,
-        publicNodes: parsePublicNodes(settings),
-      }, doFetch);
+      await startHost(
+        port,
+        { player: playerName, publicNodes: parsePublicNodes(settings) },
+        doFetch
+      );
       setNotice("已开始扫描局域网世界，请在游戏内按 ESC → “对局域网开放”。");
       await refresh();
     } catch (err) {
@@ -255,11 +351,11 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
       setError(null);
       setNotice(null);
       try {
-        await joinRoom(port, {
-          code,
-          player: playerName,
-          publicNodes: parsePublicNodes(settings),
-        }, doFetch);
+        await joinRoom(
+          port,
+          { code, player: playerName, publicNodes: parsePublicNodes(settings) },
+          doFetch
+        );
         setNotice("正在加入房间，连接成功后游戏多人列表里会出现联机房间。");
         await refresh();
       } catch (err) {
@@ -288,15 +384,15 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
   const launchApp = React.useCallback(async () => {
     const target = settings.terracottaPath.trim();
     if (!target) {
-      setError("还没有配置陶瓦联机可执行文件路径，请在设置页填写。");
+      setError("还没有配置陶瓦联机可执行文件路径，请先在设置页填写或下载。");
       return;
     }
     try {
       await host.actions.invoke("plugin:opener|open_path", { path: target });
-      setNotice("已请求系统启动陶瓦联机，稍等几秒后点击“重新检测”。");
+      setNotice("已请求系统启动陶瓦联机，稍等几秒后点“重新连接”。");
     } catch (err) {
       setError(
-        `启动失败：${err instanceof Error ? err.message : String(err)}。可手动运行陶瓦联机后再检测。`
+        `启动失败：${err instanceof Error ? err.message : String(err)}。可手动运行陶瓦联机后再连接。`
       );
     }
   }, [host, settings.terracottaPath]);
@@ -412,8 +508,8 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
     [host]
   );
 
-  const status: SessionStatus = discovering
-    ? "discovering"
+  const status: SessionStatus = connecting
+    ? "connecting"
     : online
       ? "online"
       : port
@@ -424,19 +520,20 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
     settings,
     settingsLoaded: hasLoaded,
     port,
+    portSource,
     status,
     meta,
     room,
     error,
     notice,
     busy,
-    progress,
     downloadStage,
     chmodHint,
     playerName,
     stateText: room ? stateLabel(room.state) : status === "online" ? "空闲" : "未连接",
+    portFileCommand,
     actions: {
-      discover,
+      connect,
       startHosting,
       join,
       leave,

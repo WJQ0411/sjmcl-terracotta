@@ -5,7 +5,7 @@ import type { ExtensionFactoryApi } from "../types/host";
 import type { ReactLike } from "../types/react";
 
 export interface TerracottaSettings {
-  /** Manual loopback port override; 0 means "auto discover". */
+  /** Manual loopback port; 0 means "read it from the port file / lock file". */
   port: number;
   /** Last successfully discovered port, reused for the next fast path probe. */
   cachedPort: number;
@@ -14,8 +14,6 @@ export interface TerracottaSettings {
   /** "launcher" follows the SJMCL selected account, "custom" uses playerName. */
   playerMode: "launcher" | "custom";
   playerName: string;
-  /** Discover the API port automatically when opening the console. */
-  autoDiscover: boolean;
   /** Extra EasyTier public nodes, one per line. */
   publicNodes: string;
   /** Terracotta version fetched into the extension data directory. */
@@ -32,7 +30,6 @@ export const DEFAULT_SETTINGS: TerracottaSettings = {
   terracottaPath: "",
   playerMode: "launcher",
   playerName: "",
-  autoDiscover: true,
   publicNodes: "",
   downloadedVersion: "",
 };
@@ -60,7 +57,6 @@ export function normalizeSettings(parsed: unknown): TerracottaSettings {
       typeof value.terracottaPath === "string" ? value.terracottaPath : "",
     playerMode: mode,
     playerName: typeof value.playerName === "string" ? value.playerName : "",
-    autoDiscover: value.autoDiscover !== false,
     publicNodes: typeof value.publicNodes === "string" ? value.publicNodes : "",
     downloadedVersion:
       typeof value.downloadedVersion === "string" ? value.downloadedVersion : "",

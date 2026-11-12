@@ -28,7 +28,18 @@ await build({
   logLevel: "silent",
 });
 
+await build({
+  entryPoints: [path.join(root, "src/shared/port-source.ts")],
+  outfile: path.join(outDir, "port-source.mjs"),
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  target: ["node18"],
+  logLevel: "silent",
+});
+
 const client = await import(path.join(outDir, "client.mjs"));
+const ports = await import(path.join(outDir, "port-source.mjs"));
 
 let failures = 0;
 function check(name, condition, detail) {
@@ -134,34 +145,37 @@ check("detects terracotta", meta?.version === "0.3.1", JSON.stringify(meta));
 const wrongMeta = await client.fetchMeta(port + 1, doFetch, 300);
 check("closed port returns null", wrongMeta === null);
 
-console.log("discoverPort");
-const discovered = await client.discoverPort({
-  doFetch,
-  platform: "linux",
-  preferredPorts: [port],
-});
-check("preferred port wins", discovered === port, String(discovered));
-const notFound = await client.discoverPort({
-  doFetch,
-  platform: "linux",
-  preferredPorts: [],
-  concurrency: 64,
-  signal: (() => {
-    const c = new AbortController();
-    setTimeout(() => c.abort(), 60);
-    return c.signal;
-  })(),
-}).catch((error) => error);
+console.log("port sources");
+check("settings port wins", ports.isValidPort(24000));
+check("port 0 rejected", !ports.isValidPort(0));
+check("port 70000 rejected", !ports.isValidPort(70000));
 check(
-  "scan aborts cleanly",
-  notFound instanceof client.TerracottaError && notFound.code === "aborted"
+  "lock file decodes big endian port",
+  ports.decodeLockPort(new Uint8Array([0xb1, 0x25])) === 45349,
+  String(ports.decodeLockPort(new Uint8Array([0xb1, 0x25])))
 );
-
-console.log("scanRanges");
-const linux = client.scanRanges("linux");
-check("linux starts with ephemeral range", linux[0][0] === 32768 && linux[0][1] === 60999);
-const windows = client.scanRanges("windows");
-check("windows starts with 49152", windows[0][0] === 49152);
+check("short lock payload ignored", ports.decodeLockPort(new Uint8Array([1])) === null);
+check(
+  "array payload normalized",
+  ports.decodeLockPort(ports.toBytes([0x5d, 0xc0])) === 24000
+);
+check(
+  "array-like payload normalized",
+  ports.decodeLockPort(ports.toBytes({ 0: 0x5d, 1: 0xc0 })) === 24000
+);
+check("port file parsed", ports.parsePortFile('{"port":45821}') === 45821);
+check("broken port file ignored", ports.parsePortFile("nope") === null);
+check(
+  "lock candidates include temp dir",
+  ports.lockFileCandidates("/var/folders/xx").includes(
+    "/var/folders/xx/terracotta/terracotta.lock"
+  )
+);
+check(
+  "hmcl command quotes spaces",
+  ports.hmclLaunchCommand("/opt/Terracotta App/terracotta", "/a b/port.json") ===
+    '"/opt/Terracotta App/terracotta" --hmcl "/a b/port.json"'
+);
 
 console.log("room lifecycle");
 await client.startHost(port, { player: "Steve" }, doFetch);

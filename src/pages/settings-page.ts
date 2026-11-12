@@ -42,31 +42,16 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
       React.createElement(
         OptionItem,
         {
-          key: "autoDiscover",
-          title: "自动检测端口",
-          description:
-            "陶瓦联机的本地接口使用随机端口。开启后，打开控制台时会自动扫描本机端口找到它。",
-          isChildrenIndependent: true,
-        },
-        React.createElement(Switch, {
-          isChecked: settings.autoDiscover,
-          isDisabled: !hasLoaded,
-          onChange: () => void save({ autoDiscover: !settings.autoDiscover }),
-        })
-      ),
-      React.createElement(
-        OptionItem,
-        {
           key: "port",
-          title: "固定端口（可选）",
+          title: "陶瓦联机接口端口",
           description:
-            "如果你通过参数固定了陶瓦联机的接口端口，填在这里可以跳过扫描。留空表示自动。",
+            "扩展不再扫描端口。填了就直接连这个端口；留空则读取陶瓦联机 --hmcl 启动时写的端口文件，再读不到就读它的锁文件。",
           isChildrenIndependent: true,
         },
         React.createElement(Input, {
           size: "sm",
           width: "120px",
-          placeholder: "自动",
+          placeholder: "留空则读取端口文件",
           value: portText,
           onChange: (event: { target: { value: string } }) =>
             setPortText(event.target.value.replace(/[^\d]/g, "")),
@@ -199,7 +184,7 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
       React.createElement(
         Text,
         { fontSize: "xs", className: "secondary-text" },
-        `配套版本 v${"0.2.0"} · 联机能力由 Terracotta 提供（AGPL-3.0-or-later），本扩展同样以 AGPL-3.0-or-later 发布。`
+        `配套版本 v${"0.3.0"} · 联机能力由 Terracotta 提供（AGPL-3.0-or-later），本扩展同样以 AGPL-3.0-or-later 发布。`
       )
     );
   };

@@ -67,8 +67,6 @@ export class TerracottaError extends Error {
   }
 }
 
-export const PROBE_TIMEOUT = 300;
-
 export function baseUrl(port: number): string {
   return `http://127.0.0.1:${port}`;
 }
@@ -220,78 +218,6 @@ export function normalizeRoomCode(input: string): string | null {
   const upper = input.toUpperCase().replace(/\s+/g, "");
   const match = upper.match(ROOM_CODE_PATTERN);
   return match ? match[0] : null;
-}
-
-/** Port scan order: most likely ephemeral ranges first, then everything else. */
-export function scanRanges(platform: string): Array<[number, number]> {
-  const os = platform.toLowerCase();
-  const ranges: Array<[number, number]> = [];
-  if (os.includes("win")) {
-    ranges.push([49152, 65535], [1024, 49151]);
-  } else if (os.includes("mac")) {
-    ranges.push([49152, 65535], [1024, 49151]);
-  } else {
-    ranges.push([32768, 60999], [1024, 32767], [61000, 65535]);
-  }
-  return ranges;
-}
-
-export interface DiscoveryOptions {
-  doFetch: FetchLike;
-  platform?: string;
-  /** Try these ports before scanning (cached port, user override). */
-  preferredPorts?: number[];
-  concurrency?: number;
-  onProgress?: (scanned: number, total: number) => void;
-  signal?: AbortSignal;
-}
-
-/**
- * Finds the loopback port Terracotta is listening on.
- *
- * Preferred ports are probed first (fast path), then the whole port space is
- * scanned in parallel. Closed loopback ports refuse instantly, so a full scan is
- * cheap on spin disks, but we still bail out as soon as a port answers.
- */
-export async function discoverPort(
-  options: DiscoveryOptions
-): Promise<number | null> {
-  const { doFetch, onProgress, signal } = options;
-  const platform = options.platform ?? "linux";
-  const concurrency = options.concurrency ?? 384;
-
-  for (const port of options.preferredPorts ?? []) {
-    if (!port || port < 1 || port > 65535) continue;
-    if (signal?.aborted) throw new TerracottaError("aborted", "已取消");
-    if (await fetchMeta(port, doFetch, 400)) return port;
-  }
-
-  const ranges = scanRanges(platform);
-  const total = ranges.reduce((sum, [from, to]) => sum + (to - from + 1), 0);
-  let scanned = 0;
-  let found: number | null = null;
-
-  for (const [from, to] of ranges) {
-    if (found !== null) break;
-    let cursor = from;
-    while (cursor <= to && found === null) {
-      if (signal?.aborted) throw new TerracottaError("aborted", "已取消");
-      const batch: number[] = [];
-      for (let i = 0; i < concurrency && cursor + i <= to; i += 1) {
-        batch.push(cursor + i);
-      }
-      cursor += batch.length;
-      const results = await Promise.all(
-        batch.map(async (port) => ((await fetchMeta(port, doFetch, PROBE_TIMEOUT)) ? port : null))
-      );
-      scanned += batch.length;
-      onProgress?.(Math.min(scanned, total), total);
-      const hit = results.find((port): port is number => port !== null);
-      if (hit !== undefined) found = hit;
-    }
-  }
-
-  return found;
 }
 
 export function stateLabel(state: TerracottaRoomState): string {

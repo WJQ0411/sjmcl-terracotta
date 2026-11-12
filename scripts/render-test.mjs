@@ -153,9 +153,9 @@ const consoleHtml = render(
   "console page",
   registration.pages.find((p) => p.routePath === "console").Component
 );
-check("console page shows setup hint", consoleHtml.includes("重新检测"), consoleHtml.slice(0, 120));
+check("console page shows setup hint", consoleHtml.includes("读取端口并连接"), consoleHtml.slice(0, 160));
 const settingsHtml = render("settings page", registration.settingsPage.Component);
-check("settings page shows auto discover option", settingsHtml.includes("自动检测端口"));
+check("settings page keeps the port setting", settingsHtml.includes("陶瓦联机接口端口"));
 
 const items = registration.slots["ui.instance.world.item_menu_operations"].getItems({
   instanceId: "abc",

@@ -18,8 +18,8 @@ export function createHomeStatusWidget(api: ExtensionFactoryApi) {
     const consoleRoute = `/extension/${api.identifier}/console`;
 
     const badge = (() => {
-      if (status === "discovering") {
-        return React.createElement(Badge, { colorScheme: "blue" }, "检测中");
+      if (status === "connecting") {
+        return React.createElement(Badge, { colorScheme: "blue" }, "连接中");
       }
       if (status === "online") {
         return React.createElement(
@@ -46,7 +46,7 @@ export function createHomeStatusWidget(api: ExtensionFactoryApi) {
           React.createElement(Text, { fontSize: "sm", fontWeight: "bold" }, "陶瓦联机"),
           badge
         ),
-        status === "discovering" ? React.createElement(Spinner, { size: "xs" }) : null
+        status === "connecting" ? React.createElement(Spinner, { size: "xs" }) : null
       ),
       roomCode
         ? React.createElement(
@@ -97,8 +97,8 @@ export function createHomeStatusWidget(api: ExtensionFactoryApi) {
             )
           : React.createElement(
               Button,
-              { size: "xs", variant: "outline", onClick: () => void actions.discover() },
-              "检测"
+              { size: "xs", variant: "outline", onClick: () => void actions.connect() },
+              "连接"
             )
       )
     );

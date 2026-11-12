@@ -3,7 +3,7 @@
   "name": "陶瓦联机",
   "description": "在 SJMCL 中直接创建/加入 Terracotta（陶瓦联机）房间，并一键下载最新版到扩展配置目录。",
   "author": "WJQ0411",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "minimalLauncherVersion": "1.0.0",
   "frontend": {
     "entry": "frontend/index.js"

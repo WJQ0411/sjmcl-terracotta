@@ -13,6 +13,15 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
   return function ConsolePage() {
     const session = useTerracottaSession(api);
     const [joinCode, setJoinCode] = React.useState("");
+    const [portInput, setPortInput] = React.useState("");
+
+    React.useEffect(
+      function syncPortInput() {
+        const value = session.settings.port || session.port;
+        setPortInput(value ? String(value) : "");
+      },
+      [session.port, session.settings.port]
+    );
     const { room, status, actions } = session;
 
     const state = room?.state ?? "unknown";
@@ -26,8 +35,8 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
     const profiles = room?.profiles ?? [];
 
     const statusBadge = (() => {
-      if (status === "discovering") {
-        return React.createElement(Badge, { colorScheme: "blue" }, "检测中");
+      if (status === "connecting") {
+        return React.createElement(Badge, { colorScheme: "blue" }, "连接中");
       }
       if (status === "online") {
         return React.createElement(
@@ -65,11 +74,30 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
       React.createElement(
         Text,
         { fontSize: "sm", className: "secondary-text" },
-        "插件通过陶瓦联机自带的本地 HTTP 接口工作，不会修改、也不会打包陶瓦联机的任何文件。请先启动陶瓦联机，再点击重新检测。"
+        "扩展不再扫描端口：它会直接使用你填写的端口，或读取陶瓦联机启动时写入的端口文件 / 锁文件。"
       ),
       React.createElement(
         HStack,
-        { spacing: 2, wrap: "wrap" },
+        { spacing: 2, wrap: "wrap", align: "center" },
+        React.createElement(Input, {
+          size: "sm",
+          width: "120px",
+          placeholder: "端口",
+          value: portInput,
+          onChange: (event: { target: { value: string } }) =>
+            setPortInput(event.target.value.replace(/[^\d]/g, "")),
+        }),
+        React.createElement(
+          Button,
+          {
+            size: "sm",
+            colorScheme: "blue",
+            isLoading: status === "connecting",
+            onClick: () =>
+              void actions.connect(portInput ? Number(portInput) : undefined),
+          },
+          portInput ? "用此端口连接" : "读取端口并连接"
+        ),
         React.createElement(
           Button,
           {
@@ -79,17 +107,11 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
             isDisabled: !session.settings.terracottaPath.trim(),
           },
           "启动陶瓦联机"
-        ),
-        React.createElement(
-          Button,
-          {
-            size: "sm",
-            variant: "outline",
-            isLoading: status === "discovering",
-            onClick: () => void actions.discover(),
-          },
-          "重新检测"
-        ),
+        )
+      ),
+      React.createElement(
+        HStack,
+        { spacing: 2, wrap: "wrap", align: "center" },
         React.createElement(
           Button,
           {
@@ -116,6 +138,31 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
             `${session.downloadStage} 下载内容会存到扩展数据目录 terracotta/ 下，完成后自动填入可执行文件路径。`
           )
         : null,
+      session.portFileCommand
+        ? React.createElement(
+            VStack,
+            { align: "stretch", spacing: 1 },
+            React.createElement(
+              Text,
+              { fontSize: "xs", className: "secondary-text" },
+              "想固定端口来源？用下面的命令启动陶瓦联机，它会把实际端口写进扩展目录，之后扩展直接读取，无需扫描："
+            ),
+            React.createElement(
+              HStack,
+              { spacing: 2, align: "center", wrap: "wrap" },
+              React.createElement(
+                Code,
+                { fontSize: "xs", px: 2, py: 1, borderRadius: "sm" },
+                session.portFileCommand
+              ),
+              React.createElement(
+                Button,
+                { size: "xs", variant: "ghost", onClick: () => void actions.copy(session.portFileCommand ?? "") },
+                "复制命令"
+              )
+            )
+          )
+        : null,
       session.chmodHint
         ? React.createElement(
             HStack,
@@ -139,45 +186,6 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
               Button,
               { size: "xs", variant: "ghost", onClick: () => void actions.openDataFolder() },
               "打开数据目录"
-            )
-          )
-        : null,
-      !session.settings.terracottaPath.trim()
-        ? React.createElement(
-            Text,
-            { fontSize: "xs", className: "secondary-text" },
-            "提示：下载后会自动填入可执行文件路径；也可以在设置页手动填写，之后这里就能一键启动。"
-          )
-        : null,
-      session.progress
-        ? React.createElement(
-            VStack,
-            { align: "stretch", spacing: 1 },
-            React.createElement(
-              Text,
-              { fontSize: "xs", className: "secondary-text" },
-              `正在扫描本地端口 ${session.progress.scanned} / ${session.progress.total}`
-            ),
-            React.createElement(
-              Box,
-              {
-                h: "4px",
-                borderRadius: "full",
-                bg: "blackAlpha.100",
-                overflow: "hidden",
-              },
-              React.createElement(Box, {
-                h: "100%",
-                bg: "orange.400",
-                width: `${Math.min(
-                  100,
-                  Math.round(
-                    (session.progress.scanned /
-                      Math.max(1, session.progress.total)) *
-                      100
-                  )
-                )}%`,
-              })
             )
           )
         : null
