@@ -16,6 +16,8 @@
   - 加入房间：粘贴别人发来的联机码（聊天里混着文字也能识别）
   - 房间内玩家列表、连接难度、一键断开
 - **存档菜单**：在实例的存档条目上右键即可跳到联机控制台。
+- **内置下载器**：一键读取 GitHub 上的 latest release，按当前平台挑对应压缩包，
+  下载后解压写入扩展配置目录 `data/terracotta/`，并自动把可执行文件路径填进设置。
 - **端口自动发现**：陶瓦联机的接口端口是随机的，扩展会先试缓存端口，再并发扫描本机端口，
   找到后记住；也可以在设置里填固定端口跳过扫描。
 
@@ -23,7 +25,10 @@
 
 1. 下载 `io.github.wjq0411.sjmcl-terracotta-<version>.sjmclx`。
 2. 打开 SJMCL → 设置 → 扩展 → 右上角“添加”，选择下载的包。
-3. 在设置 → 扩展 → 陶瓦联机 里填上陶瓦联机可执行文件路径（可选，用于一键启动）。
+3. 打开 扩展页面 → 陶瓦联机 → 控制台，点「下载最新版到配置目录」，
+   扩展会把 latest release 里对应平台的压缩包下载、解压到 `data/terracotta/` 并自动填好路径。
+
+> Linux / macOS 还需要给下载下来的文件执行权限，控制台会给出可直接复制的 `chmod +x` 命令。
 
 需要 SJMCL `1.0.0` 及以上版本。
 
@@ -40,7 +45,8 @@
 ```bash
 npm install
 npm run typecheck   # 类型检查
-npm test            # 针对陶瓦联机 HTTP 接口的客户端单测（假服务器）
+npm test            # 客户端单测 + 下载解包单测 + React 渲染冒烟测试
+npm run test:live   # 联网：对真实 latest release 下载并解包校验
 npm run build       # 产出 build/<identifier>/
 npm run pack        # 额外打出 .sjmclx
 ```
@@ -54,6 +60,7 @@ src/
   pages/settings-page.ts   设置页
   widgets/home-status.ts   主页卡片
   shared/terracotta.ts     陶瓦联机 HTTP 客户端（无 React 依赖，可单测）
+  shared/terracotta-download.ts  latest release 解析、tar.gz 解包、base64 写入
   shared/session.ts        会话状态、轮询、动作封装
   shared/settings.ts       配置持久化（data/settings.json）
   types/host.ts            SJMCL 宿主注入 API 的类型（来自官方脚手架）

@@ -17,6 +17,17 @@ import {
   type TerracottaState,
 } from "./terracotta";
 import {
+  LATEST_RELEASE_API,
+  LATEST_RELEASE_PAGE,
+  binaryRelativePath,
+  detectTarget,
+  formatBytes,
+  pickAsset,
+  toBase64,
+  unpackRelease,
+  type LatestRelease,
+} from "./terracotta-download";
+import {
   parsePublicNodes,
   resolvePlayerName,
   useTerracottaSettings,
@@ -25,6 +36,38 @@ import {
 
 const PORT_STATE_KEY = "terracottaPort";
 const ONLINE_STATE_KEY = "terracottaOnline";
+
+/** Resolves an absolute path for a file inside `<extension>/data`. */
+async function resolveExtensionDataFile(
+  api: ExtensionFactoryApi,
+  host: ReturnType<ExtensionFactoryApi["getHostContext"]>,
+  relativePath: string
+): Promise<string | null> {
+  const parts = [
+    "UserContent",
+    "Extensions",
+    api.identifier,
+    "data",
+    ...relativePath.split("/"),
+  ];
+  try {
+    const appData = await host.actions.invoke<string>(
+      "plugin:path|resolve_directory",
+      { directory: "AppData" }
+    );
+    if (!appData) return null;
+    try {
+      return await host.actions.invoke<string>("plugin:path|join", {
+        paths: [appData, ...parts],
+      });
+    } catch {
+      const separator = appData.includes("\\") ? "\\" : "/";
+      return [appData.replace(/[\\/]+$/, ""), ...parts].join(separator);
+    }
+  } catch {
+    return null;
+  }
+}
 
 export type SessionStatus = "unknown" | "discovering" | "online" | "offline";
 
@@ -39,6 +82,8 @@ export interface TerracottaSession {
   notice: string | null;
   busy: boolean;
   progress: { scanned: number; total: number } | null;
+  downloadStage: string | null;
+  chmodHint: string | null;
   playerName?: string;
   stateText: string;
   actions: {
@@ -47,7 +92,9 @@ export interface TerracottaSession {
     join: (code: string) => Promise<void>;
     leave: () => Promise<void>;
     launchApp: () => Promise<void>;
-    openDownload: () => Promise<void>;
+    downloadTerracotta: () => Promise<void>;
+    openReleasePage: () => Promise<void>;
+    openDataFolder: () => Promise<void>;
     copy: (text: string) => Promise<void>;
     refresh: () => Promise<void>;
     writeSettings: (patch: Partial<TerracottaSettings>) => Promise<TerracottaSettings>;
@@ -74,6 +121,8 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
   const [progress, setProgress] = React.useState<
     { scanned: number; total: number } | null
   >(null);
+  const [downloadStage, setDownloadStage] = React.useState<string | null>(null);
+  const [chmodHint, setChmodHint] = React.useState<string | null>(null);
 
   const selectedPlayerName = (hostData.selectedPlayer as { name?: string } | undefined)
     ?.name;
@@ -252,15 +301,98 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
     }
   }, [host, settings.terracottaPath]);
 
-  const openDownload = React.useCallback(async () => {
+  const openReleasePage = React.useCallback(async () => {
     try {
-      await host.actions.openExternalLink(
-        "https://github.com/burningtnt/Terracotta/releases"
-      );
+      await host.actions.openExternalLink(LATEST_RELEASE_PAGE);
     } catch {
       /* user dismissed the confirmation dialog */
     }
   }, [host]);
+
+  const openDataFolder = React.useCallback(async () => {
+    const target = await resolveExtensionDataFile(api, host, ".");
+    try {
+      await host.actions.invoke("plugin:opener|open_path", {
+        path: target ?? ".",
+      });
+    } catch (err) {
+      setError(
+        `打不开扩展数据目录：${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }, [api, host]);
+
+  /**
+   * Resolves the newest Terracotta release, downloads the archive for this
+   * platform and unpacks it into the extension data directory.
+   */
+  const downloadTerracotta = React.useCallback(async () => {
+    setError(null);
+    setNotice(null);
+    setChmodHint(null);
+    try {
+      setDownloadStage("获取最新版本…");
+      const releaseResponse = await host.actions.request(LATEST_RELEASE_API, {
+        headers: { Accept: "application/vnd.github+json" },
+      } as RequestInit);
+      if (!releaseResponse.ok) {
+        throw new Error(`GitHub API 返回 HTTP ${releaseResponse.status}`);
+      }
+      const release = (await releaseResponse.json()) as LatestRelease;
+      const target = detectTarget(navigator.userAgent);
+      const asset = pickAsset(release.assets ?? [], target);
+      if (!asset) {
+        throw new Error(
+          `最新版 ${release.tag_name} 没有 ${target.os}-${target.arch} 的压缩包`
+        );
+      }
+
+      setDownloadStage(`下载 ${asset.name}（${formatBytes(asset.size)}）…`);
+      const binaryResponse = await host.actions.request(
+        asset.browser_download_url
+      );
+      if (!binaryResponse.ok) {
+        throw new Error(`下载失败：HTTP ${binaryResponse.status}`);
+      }
+      const archive = new Uint8Array(await binaryResponse.arrayBuffer());
+
+      setDownloadStage("解压…");
+      const payload = unpackRelease(archive);
+      setDownloadStage("写入扩展数据目录…");
+      const relativePath = binaryRelativePath(target.os);
+      await host.actions.writeFile(
+        relativePath,
+        toBase64(payload.data),
+        "base64"
+      );
+
+      const absolutePath = await resolveExtensionDataFile(
+        api,
+        host,
+        relativePath
+      );
+      await writeSettings({
+        terracottaPath: absolutePath ?? settings.terracottaPath,
+        downloadedVersion: release.tag_name,
+      });
+      setNotice(
+        absolutePath
+          ? `已下载陶瓦联机 ${release.tag_name} → ${absolutePath}`
+          : `已下载陶瓦联机 ${release.tag_name} 到扩展数据目录（${relativePath}），请在设置里填写它的绝对路径`
+      );
+      if (target.os !== "windows") {
+        setChmodHint(
+          absolutePath
+            ? `chmod +x "${absolutePath}"`
+            : `chmod +x <扩展数据目录>/${relativePath}`
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDownloadStage(null);
+    }
+  }, [api, host, settings.terracottaPath, writeSettings]);
 
   const copy = React.useCallback(
     async (text: string) => {
@@ -299,6 +431,8 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
     notice,
     busy,
     progress,
+    downloadStage,
+    chmodHint,
     playerName,
     stateText: room ? stateLabel(room.state) : status === "online" ? "空闲" : "未连接",
     actions: {
@@ -307,7 +441,9 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
       join,
       leave,
       launchApp,
-      openDownload,
+      downloadTerracotta,
+      openReleasePage,
+      openDataFolder,
       copy,
       refresh,
       writeSettings,

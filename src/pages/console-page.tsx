@@ -92,15 +92,61 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
         ),
         React.createElement(
           Button,
-          { size: "sm", variant: "ghost", onClick: () => void actions.openDownload() },
-          "下载陶瓦联机"
+          {
+            size: "sm",
+            variant: "solid",
+            colorScheme: "green",
+            isLoading: !!session.downloadStage,
+            onClick: () => void actions.downloadTerracotta(),
+          },
+          session.settings.downloadedVersion
+            ? `更新到最新版（已下载 ${session.settings.downloadedVersion}）`
+            : "下载最新版到配置目录"
+        ),
+        React.createElement(
+          Button,
+          { size: "sm", variant: "ghost", onClick: () => void actions.openReleasePage() },
+          "打开发布页"
         )
       ),
+      session.downloadStage
+        ? React.createElement(
+            Text,
+            { fontSize: "xs", className: "secondary-text" },
+            `${session.downloadStage} 下载内容会存到扩展数据目录 terracotta/ 下，完成后自动填入可执行文件路径。`
+          )
+        : null,
+      session.chmodHint
+        ? React.createElement(
+            HStack,
+            { spacing: 2, align: "center", wrap: "wrap" },
+            React.createElement(
+              Text,
+              { fontSize: "xs", className: "secondary-text" },
+              "非 Windows 平台还需给它执行权限："
+            ),
+            React.createElement(
+              Code,
+              { fontSize: "xs", px: 2, py: 1, borderRadius: "sm" },
+              session.chmodHint
+            ),
+            React.createElement(
+              Button,
+              { size: "xs", variant: "ghost", onClick: () => void actions.copy(session.chmodHint ?? "") },
+              "复制命令"
+            ),
+            React.createElement(
+              Button,
+              { size: "xs", variant: "ghost", onClick: () => void actions.openDataFolder() },
+              "打开数据目录"
+            )
+          )
+        : null,
       !session.settings.terracottaPath.trim()
         ? React.createElement(
             Text,
             { fontSize: "xs", className: "secondary-text" },
-            "提示：在设置页填写陶瓦联机可执行文件路径后，这里就能一键启动。"
+            "提示：下载后会自动填入可执行文件路径；也可以在设置页手动填写，之后这里就能一键启动。"
           )
         : null,
       session.progress

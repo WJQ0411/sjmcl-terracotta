@@ -18,6 +18,8 @@ export interface TerracottaSettings {
   autoDiscover: boolean;
   /** Extra EasyTier public nodes, one per line. */
   publicNodes: string;
+  /** Terracotta version fetched into the extension data directory. */
+  downloadedVersion: string;
 }
 
 const SETTINGS_FILE = "settings.json";
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: TerracottaSettings = {
   playerName: "",
   autoDiscover: true,
   publicNodes: "",
+  downloadedVersion: "",
 };
 
 let initPromise: Promise<TerracottaSettings> | null = null;
@@ -59,6 +62,8 @@ export function normalizeSettings(parsed: unknown): TerracottaSettings {
     playerName: typeof value.playerName === "string" ? value.playerName : "",
     autoDiscover: value.autoDiscover !== false,
     publicNodes: typeof value.publicNodes === "string" ? value.publicNodes : "",
+    downloadedVersion:
+      typeof value.downloadedVersion === "string" ? value.downloadedVersion : "",
   };
 }
 

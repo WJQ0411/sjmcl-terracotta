@@ -156,7 +156,7 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
       ),
       React.createElement(
         HStack,
-        { spacing: 3, align: "center" },
+        { spacing: 3, align: "center", wrap: "wrap" },
         React.createElement(
           Button,
           {
@@ -164,10 +164,12 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
             variant: "outline",
             onClick: () =>
               void host.actions.openExternalLink(
-                "https://github.com/burningtnt/Terracotta/releases"
+                "https://github.com/burningtnt/Terracotta/releases/latest"
               ),
           },
-          "下载陶瓦联机"
+          settings.downloadedVersion
+            ? `已下载 ${settings.downloadedVersion} · 查看最新发布`
+            : "打开发布页（latest）"
         ),
         React.createElement(
           Button,
@@ -192,7 +194,12 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
       React.createElement(
         Text,
         { fontSize: "xs", className: "secondary-text" },
-        `配套版本 v${"0.1.0"} · 联机能力由 Terracotta 提供（AGPL-3.0-or-later），本扩展同样以 AGPL-3.0-or-later 发布。`
+        "控制台的“下载最新版到配置目录”会读取 GitHub 上的 latest release，把对应平台的压缩包解压后写入扩展数据目录 terracotta/，并自动填入上面的可执行文件路径。"
+      ),
+      React.createElement(
+        Text,
+        { fontSize: "xs", className: "secondary-text" },
+        `配套版本 v${"0.2.0"} · 联机能力由 Terracotta 提供（AGPL-3.0-or-later），本扩展同样以 AGPL-3.0-or-later 发布。`
       )
     );
   };
