@@ -30,26 +30,39 @@ export function normalizeLocalPath(value: string): string | null {
   let path = value.trim();
   if (!path) return null;
 
-  // Strip any number of scheme://authority prefixes.
+  // Strip any number of `scheme://`, `scheme:///`, `scheme:/` prefixes.
   for (let guard = 0; guard < 3; guard += 1) {
-    const match = path.match(/^([a-zA-Z][a-zA-Z0-9+.\-]*):\/\/([\s\S]*)$/);
+    // A Windows drive letter (C:\ or C:/) is not a scheme.
+    if (/^[a-zA-Z]:[\\/]/.test(path)) break;
+    const match = path.match(/^([a-zA-Z][a-zA-Z0-9+.\-]+):([\\/]{1,3})([\s\S]*)$/);
     if (!match) break;
-    const rest = match[2];
-    if (rest.startsWith("/") || rest.startsWith("\\")) {
-      // smb:///home/x, file:///home/x
-      path = rest;
+
+    const separators = match[2];
+    const rest = match[3];
+    if (!rest) {
+      path = "";
+      break;
+    }
+
+    if (separators.length >= 3 || separators.length === 1) {
+      // smb:///home/x, file:/C:/x — everything after the colon is the path.
+      path = `/${rest.replace(/^[\\/]+/, "")}`;
       continue;
     }
+
+    // `scheme://authority/path`
     const slash = rest.search(/[\\/]/);
-    const authority = slash === -1 ? rest : rest.slice(0, slash);
-    const remainder = slash === -1 ? "" : rest.slice(slash);
-    if (slash !== -1 && !LOCAL_AUTHORITIES.has(authority.toLowerCase())) {
-      // Remote host in the URL: best effort, keep the path part.
-      path = remainder;
-    } else if (slash !== -1) {
+    if (slash === -1) {
+      path = `/${rest}`;
+      continue;
+    }
+    const authority = rest.slice(0, slash).toLowerCase();
+    const remainder = rest.slice(slash);
+    if (LOCAL_AUTHORITIES.has(authority)) {
       path = remainder;
     } else {
-      path = `/${authority}`;
+      // Remote host: best effort, keep the path part only.
+      path = remainder;
     }
   }
 

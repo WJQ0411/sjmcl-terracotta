@@ -156,6 +156,12 @@ const consoleHtml = render(
 check("console page shows connect action", consoleHtml.includes("连接陶瓦联机"), consoleHtml.slice(0, 160));
 const settingsHtml = render("settings page", registration.settingsPage.Component);
 check("settings page keeps the port setting", settingsHtml.includes("陶瓦联机接口端口"));
+check(
+  "console page offers the background launch command",
+  consoleHtml.includes("复制启动命令"),
+  consoleHtml.slice(0, 200)
+);
+check("console launch command has no url scheme", !/nohup [^<]*:\/\//.test(consoleHtml));
 
 const items = registration.slots["ui.instance.world.item_menu_operations"].getItems({
   instanceId: "abc",

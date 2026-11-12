@@ -81,15 +81,6 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
           "连接陶瓦联机"
         ),
         React.createElement(
-          Button,
-          {
-            size: "sm",
-            colorScheme: "orange",
-            onClick: () => void actions.launchApp(),
-          },
-          "启动 core"
-        ),
-        React.createElement(
           Text,
           { fontSize: "xs", className: "secondary-text" },
           `默认端口 ${session.settings.port}，可在设置 → 扩展 → 陶瓦联机 里修改`
@@ -132,31 +123,6 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
           (session.settings.corePath.trim() || session.coreRelativePath)
         }`
       ),
-      session.portFileCommand
-        ? React.createElement(
-            VStack,
-            { align: "stretch", spacing: 1 },
-            React.createElement(
-              Text,
-              { fontSize: "xs", className: "secondary-text" },
-              "想固定端口来源？用下面的命令启动陶瓦联机，它会把实际端口写进扩展目录，之后扩展直接读取，无需扫描："
-            ),
-            React.createElement(
-              HStack,
-              { spacing: 2, align: "center", wrap: "wrap" },
-              React.createElement(
-                Code,
-                { fontSize: "xs", px: 2, py: 1, borderRadius: "sm" },
-                session.portFileCommand
-              ),
-              React.createElement(
-                Button,
-                { size: "xs", variant: "ghost", onClick: () => void actions.copy(session.portFileCommand ?? "") },
-                "复制命令"
-              )
-            )
-          )
-        : null,
       session.chmodHint
         ? React.createElement(
             HStack,
@@ -176,13 +142,45 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
               { size: "xs", variant: "ghost", onClick: () => void actions.copy(session.chmodHint ?? "") },
               "复制命令"
             ),
-            React.createElement(
-              Button,
-              { size: "xs", variant: "ghost", onClick: () => void actions.openDataFolder() },
-              "打开数据目录"
-            )
           )
         : null
+    );
+
+    const launchBlock = React.createElement(
+      VStack,
+      { align: "stretch", spacing: 1 },
+      React.createElement(
+        Text,
+        { fontSize: "xs", className: "secondary-text" },
+        "扩展不会直接启动陶瓦联机（Tauri 的 open 会改写路径），请复制下面这条命令到终端执行——它会让陶瓦联机在后台运行，并把实际端口写进扩展目录："
+      ),
+      React.createElement(
+        HStack,
+        { spacing: 2, align: "center", wrap: "wrap" },
+        React.createElement(
+          Code,
+          {
+            fontSize: "xs",
+            px: 2,
+            py: 1,
+            borderRadius: "sm",
+            maxW: "640px",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-all",
+          },
+          session.launchCommand
+        ),
+        React.createElement(
+          Button,
+          { size: "xs", colorScheme: "orange", onClick: () => void actions.copy(session.launchCommand) },
+          "复制启动命令"
+        ),
+        React.createElement(
+          Button,
+          { size: "xs", variant: "ghost", onClick: () => void actions.copy(session.corePath ?? session.settings.corePath.trim()) },
+          "复制 core 路径"
+        )
+      )
     );
 
     const idleCards = React.createElement(
@@ -372,6 +370,7 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
       status !== "online" ? setupCard : null,
       status === "online" && !isHosting && !isGuesting ? idleCards : null,
       status === "online" && (isHosting || isGuesting) ? roomPanel : null,
+      launchBlock,
       React.createElement(Divider, null),
       React.createElement(
         Text,

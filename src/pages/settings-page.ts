@@ -63,7 +63,7 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
           key: "core",
           title: "core 路径（固定）",
           description:
-            "下载与启动都用这个路径，不再单独选择目录。下载会直接覆盖这里的可执行文件。",
+            "下载只写这里，不再单独选择目录。扩展不直接启动它——控制台会给出可复制的后台启动命令，避免 Tauri 改写路径。",
           isChildrenIndependent: true,
         },
         React.createElement(

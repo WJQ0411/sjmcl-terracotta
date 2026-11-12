@@ -93,6 +93,32 @@ export function hmclLaunchCommand(binaryPath: string, portFile: string): string 
   return `${bin} --hmcl ${quote(portFile)}`;
 }
 
+/**
+ * Full background launch command for the user to paste into a terminal.
+ *
+ * The extension deliberately does not spawn Terracotta itself: the Tauri opener
+ * resolves paths through its own asset protocol, which on some setups hands back
+ * an `smb://...` URL and fails with "no such file". A shell command bypasses
+ * that layer entirely and keeps Terracotta alive after the launcher closes.
+ */
+export function backgroundLaunchCommand(
+  binaryPath: string,
+  portFile: string,
+  platform = "linux"
+): string {
+  const bin = (binaryPath || "terracotta").trim();
+  const port = (portFile || "").trim();
+
+  if (/win/i.test(platform)) {
+    const ps = (value: string) => `'${value.replace(/'/g, "''")}'`;
+    return `Start-Process -FilePath ${ps(bin)} -ArgumentList '--hmcl',${ps(port)}`;
+  }
+
+  const quote = (value: string) =>
+    /[\s"'$`\\]/.test(value) ? `"${value.replace(/(["$`\\])/g, "\\$1")}"` : value;
+  return `nohup ${quote(bin)} --hmcl ${quote(port)} >/dev/null 2>&1 &`;
+}
+
 export interface PortSourceDeps {
   /** Reads `data/terracotta-port.json`; should throw when the file is absent. */
   readPortFile: () => Promise<string>;

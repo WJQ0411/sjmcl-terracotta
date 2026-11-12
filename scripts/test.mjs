@@ -177,6 +177,31 @@ check(
     '"/opt/Terracotta App/terracotta" --hmcl "/a b/port.json"'
 );
 
+console.log("background launch command");
+check(
+  "posix command",
+  ports.backgroundLaunchCommand("/opt/terracotta", "/data/port.json", "linux") ===
+    "nohup /opt/terracotta --hmcl /data/port.json >/dev/null 2>&1 &",
+  ports.backgroundLaunchCommand("/opt/terracotta", "/data/port.json", "linux")
+);
+check(
+  "posix quotes paths with spaces",
+  ports
+    .backgroundLaunchCommand("/opt/Terracotta App/terracotta", "/data/my port.json", "linux")
+    .includes('"/opt/Terracotta App/terracotta"'),
+  ports.backgroundLaunchCommand("/opt/Terracotta App/terracotta", "/data/my port.json", "linux")
+);
+check(
+  "windows command",
+  ports.backgroundLaunchCommand(
+    "C:\\tc\\terracotta.exe",
+    "C:\\tc\\port.json",
+    "windows"
+  ) ===
+    "Start-Process -FilePath 'C:\\tc\\terracotta.exe' -ArgumentList '--hmcl','C:\\tc\\port.json'",
+  ports.backgroundLaunchCommand("C:\\tc\\terracotta.exe", "C:\\tc\\port.json", "windows")
+);
+
 console.log("port candidate ordering");
 const fakeDeps = (portFileRaw, lockBytes) => ({
   readPortFile: async () => {

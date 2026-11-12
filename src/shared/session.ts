@@ -18,7 +18,7 @@ import {
 import {
   PORT_FILE_NAME,
   collectPortCandidates,
-  hmclLaunchCommand,
+  backgroundLaunchCommand,
   isValidPort,
   type PortSource,
   type ResolvedPort,
@@ -73,17 +73,15 @@ export interface TerracottaSession {
   corePath: string | null;
   /** Relative path of the core executable inside `data/`. */
   coreRelativePath: string;
-  /** Copy-paste command that pins the port file for the next launch. */
-  portFileCommand: string | null;
+  /** Full background launch command for the user to paste into a terminal. */
+  launchCommand: string;
   actions: {
     connect: (portOverride?: number) => Promise<void>;
     startHosting: () => Promise<void>;
     join: (code: string) => Promise<void>;
     leave: () => Promise<void>;
-    launchApp: () => Promise<void>;
     downloadTerracotta: () => Promise<void>;
     openReleasePage: () => Promise<void>;
-    openDataFolder: () => Promise<void>;
     copy: (text: string) => Promise<void>;
     refresh: () => Promise<void>;
     writeSettings: (patch: Partial<TerracottaSettings>) => Promise<TerracottaSettings>;
@@ -110,7 +108,7 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
   const [connecting, setConnecting] = React.useState(false);
   const [downloadStage, setDownloadStage] = React.useState<string | null>(null);
   const [chmodHint, setChmodHint] = React.useState<string | null>(null);
-  const [portFileCommand, setPortFileCommand] = React.useState<string | null>(null);
+  const [launchCommand, setLaunchCommand] = React.useState("");
   const [corePath, setCorePath] = React.useState<string | null>(null);
   const coreRelativePath = coreBinaryRelativePath(
     detectTarget(navigator.userAgent).os
@@ -242,10 +240,11 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
         if (core && core !== settings.corePath) {
           void writeSettings({ corePath: core });
         }
-        setPortFileCommand(
-          hmclLaunchCommand(
+        setLaunchCommand(
+          backgroundLaunchCommand(
             core ?? `<扩展数据目录>/${coreRelativePath}`,
-            portFile ?? `<扩展数据目录>/${PORT_FILE_NAME}`
+            portFile ?? `<扩展数据目录>/${PORT_FILE_NAME}`,
+            detectTarget(navigator.userAgent).os
           )
         );
       });
@@ -323,28 +322,6 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
     }
   }, [doFetch, port, refresh]);
 
-  const launchApp = React.useCallback(async () => {
-    const target =
-      corePath ||
-      (settings.corePath.trim() || null) ||
-      (await resolveExtensionDataFile(api, host, coreRelativePath));
-    if (!target) {
-      setError(
-        `还没法确定 core 的绝对路径。请点“下载最新版”（写入 ${coreRelativePath}），或稍后重试。`
-      );
-      return;
-    }
-    try {
-      setCorePath(target);
-      await host.actions.invoke("plugin:opener|open_path", { path: target });
-      setNotice("已请求系统启动陶瓦联机（core），稍等几秒后点“重新连接”。");
-    } catch (err) {
-      setError(
-        `启动失败：${err instanceof Error ? err.message : String(err)}。可能是 core 还没下载或缺少执行权限。`
-      );
-    }
-  }, [api, corePath, coreRelativePath, host, settings.corePath]);
-
   const openReleasePage = React.useCallback(async () => {
     try {
       await host.actions.openExternalLink(LATEST_RELEASE_PAGE);
@@ -352,19 +329,6 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
       /* user dismissed the confirmation dialog */
     }
   }, [host]);
-
-  const openDataFolder = React.useCallback(async () => {
-    const target = await resolveExtensionDataFile(api, host, ".");
-    try {
-      await host.actions.invoke("plugin:opener|open_path", {
-        path: target ?? ".",
-      });
-    } catch (err) {
-      setError(
-        `打不开扩展数据目录：${err instanceof Error ? err.message : String(err)}`
-      );
-    }
-  }, [api, host]);
 
   /**
    * Resolves the newest Terracotta release, downloads the archive for this
@@ -482,16 +446,14 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
     stateText: room ? stateLabel(room.state) : status === "online" ? "空闲" : "未连接",
     corePath,
     coreRelativePath,
-    portFileCommand,
+    launchCommand,
     actions: {
       connect,
       startHosting,
       join,
       leave,
-      launchApp,
       downloadTerracotta,
       openReleasePage,
-      openDataFolder,
       copy,
       refresh,
       writeSettings,
