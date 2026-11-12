@@ -34,6 +34,7 @@ import {
   unpackRelease,
   type LatestRelease,
 } from "./terracotta-download";
+import { resolveExtensionDataFile } from "./extension-paths";
 import {
   parsePublicNodes,
   resolvePlayerName,
@@ -43,38 +44,6 @@ import {
 
 const PORT_STATE_KEY = "terracottaPort";
 const ONLINE_STATE_KEY = "terracottaOnline";
-
-/** Resolves an absolute path for a file inside `<extension>/data`. */
-async function resolveExtensionDataFile(
-  api: ExtensionFactoryApi,
-  host: ReturnType<ExtensionFactoryApi["getHostContext"]>,
-  relativePath: string
-): Promise<string | null> {
-  const parts = [
-    "UserContent",
-    "Extensions",
-    api.identifier,
-    "data",
-    ...relativePath.split("/"),
-  ];
-  try {
-    const appData = await host.actions.invoke<string>(
-      "plugin:path|resolve_directory",
-      { directory: "AppData" }
-    );
-    if (!appData) return null;
-    try {
-      return await host.actions.invoke<string>("plugin:path|join", {
-        paths: [appData, ...parts],
-      });
-    } catch {
-      const separator = appData.includes("\\") ? "\\" : "/";
-      return [appData.replace(/[\\/]+$/, ""), ...parts].join(separator);
-    }
-  } catch {
-    return null;
-  }
-}
 
 const SOURCE_HINT: Record<PortSource, string> = {
   settings: "设置项",
@@ -270,6 +239,9 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
       ]).then(([core, portFile]) => {
         if (cancelled) return;
         setCorePath(core);
+        if (core && core !== settings.corePath) {
+          void writeSettings({ corePath: core });
+        }
         setPortFileCommand(
           hmclLaunchCommand(
             core ?? `<扩展数据目录>/${coreRelativePath}`,
@@ -281,7 +253,7 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
         cancelled = true;
       };
     },
-    [api, coreRelativePath, host]
+    [api, coreRelativePath, host, settings.corePath, writeSettings]
   );
 
   const startHosting = React.useCallback(async () => {
@@ -353,11 +325,12 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
 
   const launchApp = React.useCallback(async () => {
     const target =
-      corePath ??
+      corePath ||
+      (settings.corePath.trim() || null) ||
       (await resolveExtensionDataFile(api, host, coreRelativePath));
     if (!target) {
       setError(
-        `拿不到 core 路径，请先点“下载最新版”（会写入 ${coreRelativePath}）。`
+        `还没法确定 core 的绝对路径。请点“下载最新版”（写入 ${coreRelativePath}），或稍后重试。`
       );
       return;
     }
@@ -370,7 +343,7 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
         `启动失败：${err instanceof Error ? err.message : String(err)}。可能是 core 还没下载或缺少执行权限。`
       );
     }
-  }, [api, corePath, coreRelativePath, host]);
+  }, [api, corePath, coreRelativePath, host, settings.corePath]);
 
   const openReleasePage = React.useCallback(async () => {
     try {
@@ -443,7 +416,10 @@ export function useTerracottaSession(api: ExtensionFactoryApi): TerracottaSessio
         relativePath
       );
       setCorePath(absolutePath);
-      await writeSettings({ downloadedVersion: release.tag_name });
+      await writeSettings({
+        downloadedVersion: release.tag_name,
+        ...(absolutePath ? { corePath: absolutePath } : {}),
+      });
       setNotice(
         absolutePath
           ? `已下载陶瓦联机 ${release.tag_name} → ${absolutePath}`

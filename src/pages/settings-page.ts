@@ -197,7 +197,7 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
       React.createElement(
         Text,
         { fontSize: "xs", className: "secondary-text" },
-        `配套版本 v${"0.4.0"} · 联机能力由 Terracotta 提供（AGPL-3.0-or-later），本扩展同样以 AGPL-3.0-or-later 发布。`
+        `配套版本 v${"0.2.0"} · 联机能力由 Terracotta 提供（AGPL-3.0-or-later），本扩展同样以 AGPL-3.0-or-later 发布。`
       )
     );
   };

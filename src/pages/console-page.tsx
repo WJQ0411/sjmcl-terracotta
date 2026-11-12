@@ -127,7 +127,10 @@ export function createConsolePage(api: ExtensionFactoryApi, standalone: boolean)
       React.createElement(
         Text,
         { fontSize: "xs", className: "secondary-text" },
-        `core 路径：${session.corePath ?? session.coreRelativePath}`
+        `core 路径：${
+          session.corePath ??
+          (session.settings.corePath.trim() || session.coreRelativePath)
+        }`
       ),
       session.portFileCommand
         ? React.createElement(

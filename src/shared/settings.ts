@@ -16,6 +16,8 @@ export interface TerracottaSettings {
   publicNodes: string;
   /** Terracotta version fetched into the extension data directory. */
   downloadedVersion: string;
+  /** Absolute path of the core executable, cached once the host reveals it. */
+  corePath: string;
 }
 
 const SETTINGS_FILE = "settings.json";
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: TerracottaSettings = {
   playerName: "",
   publicNodes: "",
   downloadedVersion: "",
+  corePath: "",
 };
 
 let initPromise: Promise<TerracottaSettings> | null = null;
@@ -59,6 +62,7 @@ export function normalizeSettings(parsed: unknown): TerracottaSettings {
     publicNodes: typeof value.publicNodes === "string" ? value.publicNodes : "",
     downloadedVersion:
       typeof value.downloadedVersion === "string" ? value.downloadedVersion : "",
+    corePath: typeof value.corePath === "string" ? value.corePath : "",
   };
 }
 

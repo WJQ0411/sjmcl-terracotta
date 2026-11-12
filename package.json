@@ -1,14 +1,14 @@
 {
   "name": "sjmcl-terracotta",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.2.0",
   "description": "Terracotta (陶瓦联机) connector extension for SJMCL",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/test.mjs && node scripts/test-download.mjs && node scripts/render-test.mjs",
+    "test": "node scripts/test.mjs && node scripts/test-paths.mjs && node scripts/test-download.mjs && node scripts/render-test.mjs",
     "test:live": "node scripts/live-download-test.mjs",
     "pack": "node scripts/build.mjs --package"
   },

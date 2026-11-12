@@ -3,7 +3,7 @@
   "name": "陶瓦联机",
   "description": "在 SJMCL 中直接创建/加入 Terracotta（陶瓦联机）房间；内置下载器固定写入 core 路径，端口直读不扫描（默认 11451）。",
   "author": "WJQ0411",
-  "version": "0.4.0",
+  "version": "0.2.0",
   "minimalLauncherVersion": "1.0.0",
   "frontend": {
     "entry": "frontend/index.js"
