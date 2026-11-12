@@ -13,7 +13,6 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
 
   return function SettingsPage() {
     const { settings, hasLoaded, writeSettings } = useTerracottaSettings(api);
-    const [portText, setPortText] = React.useState("");
     const [nameText, setNameText] = React.useState("");
     const [nodesText, setNodesText] = React.useState("");
     const [savedAt, setSavedAt] = React.useState<string | null>(null);
@@ -21,7 +20,6 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
     React.useEffect(
       function syncFromSettings() {
         if (!hasLoaded) return;
-        setPortText(settings.port ? String(settings.port) : "");
         setNameText(settings.playerName);
         setNodesText(settings.publicNodes);
       },
@@ -37,26 +35,6 @@ export function createSettingsPage(api: ExtensionFactoryApi) {
     );
 
     const items = [
-      React.createElement(
-        OptionItem,
-        {
-          key: "port",
-          title: "陶瓦联机接口端口",
-          description:
-            "默认 11451，连接时优先尝试；不通再读陶瓦联机 --hmcl 启动时写的端口文件与锁文件，全程不扫描端口。",
-          isChildrenIndependent: true,
-        },
-        React.createElement(Input, {
-          size: "sm",
-          width: "120px",
-          placeholder: "11451",
-          value: portText,
-          onChange: (event: { target: { value: string } }) =>
-            setPortText(event.target.value.replace(/[^\d]/g, "")),
-          onBlur: () =>
-            void save({ port: portText ? Number(portText) : 11451 }),
-        })
-      ),
       React.createElement(
         OptionItem,
         {

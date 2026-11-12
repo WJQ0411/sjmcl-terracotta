@@ -203,6 +203,11 @@ check(
   String(settingsModule.normalizeSettings({}).port)
 );
 check(
+  "custom port from settings.json is kept",
+  settingsModule.normalizeSettings({ port: 40000 }).port === 40000,
+  String(settingsModule.normalizeSettings({ port: 40000 }).port)
+);
+check(
   "legacy 0 port migrates to 11451",
   settingsModule.normalizeSettings({ port: 0 }).port === 11451
 );
